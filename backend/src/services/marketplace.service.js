@@ -1,7 +1,7 @@
 const { supabaseAdmin } = require('./supabase.service');
 const { httpError } = require('./auth.helpers');
 
-const VALID_CATEGORIES = ['furniture', 'electronics', 'clothes', 'books', 'other'];
+const VALID_CATEGORIES = ['furniture', 'electronics', 'appliances', 'clothes', 'books', 'other'];
 const VALID_CONDITIONS = ['new', 'like_new', 'good', 'fair', 'poor'];
 const VALID_STATUSES   = ['active', 'reserved', 'hidden', 'closed'];
 
