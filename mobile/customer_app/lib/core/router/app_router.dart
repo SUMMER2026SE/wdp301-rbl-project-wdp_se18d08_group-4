@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/booking/data/quote_progress_repository.dart';
+import '../../features/booking/domain/quote_models.dart';
 import '../../features/booking/presentation/cubit/booking_flow_cubit.dart';
 import '../../features/booking/presentation/pages/choose_location_page.dart';
 import '../../features/booking/presentation/pages/labor_configure_page.dart';
@@ -11,6 +13,11 @@ import '../../features/booking/presentation/pages/labor_service_page.dart';
 import '../../features/booking/presentation/pages/choose_partner_page.dart';
 import '../../features/booking/presentation/pages/insurance_selection_page.dart';
 import '../../features/booking/presentation/pages/payment_page.dart';
+import '../../features/booking/presentation/pages/move_dorm_details_page.dart';
+import '../../features/booking/presentation/pages/move_schedule_page.dart';
+import '../../features/booking/presentation/pages/provider_quote_detail_page.dart';
+import '../../features/booking/presentation/pages/quote_progress_page.dart';
+import '../../features/booking/presentation/pages/reference_prices_page.dart';
 import '../../features/booking/presentation/pages/service_packages_page.dart';
 import '../../features/chat/presentation/pages/chat_thread_page.dart';
 import '../../features/notifications/presentation/pages/notification_detail_page.dart';
@@ -24,6 +31,7 @@ import '../../features/payments/presentation/pages/payment_methods_page.dart';
 import '../../features/pass_items/presentation/pages/create_pass_item_page.dart';
 import '../../features/pass_items/presentation/pages/pass_item_chat_page.dart';
 import '../../features/pass_items/presentation/pages/pass_item_detail_page.dart';
+import '../../features/pass_items/presentation/pages/pass_item_seller_page.dart';
 import '../../features/pass_items/presentation/pages/pass_items_page.dart';
 import '../../features/auth/data/customer_auth_repository.dart';
 import '../../features/auth/presentation/pages/forgot_password_page.dart';
@@ -77,10 +85,57 @@ abstract final class AppRouter {
       GoRoute(path: '/booking/labor/configure', builder: (_, __) => const LaborConfigurePage()),
       GoRoute(path: '/booking/labor/providers', builder: (_, __) => const LaborProvidersPage()),
       GoRoute(path: '/booking/location', builder: (_, __) => const ChooseLocationPage()),
+      GoRoute(path: '/booking/dorm-details', builder: (_, __) => const MoveDormDetailsPage()),
+      GoRoute(
+        path: '/booking/quotes/:refId/progress',
+        redirect: (_, state) {
+          final refId = state.pathParameters['refId']!;
+          final snap = QuoteProgressRepository.instance.peek(refId);
+          if (snap?.status == QuoteProgressStatus.providerConfirmed) {
+            return '/booking/quotes/$refId/schedule';
+          }
+          return null;
+        },
+        builder: (_, state) => QuoteProgressPage(
+          referenceId: state.pathParameters['refId']!,
+          photosUploadFailed: state.uri.queryParameters['photos'] == 'failed',
+        ),
+      ),
+      GoRoute(
+        path: '/booking/quotes/:refId/offer/:quoteId',
+        builder: (_, state) => ProviderQuoteDetailPage(
+          referenceId: state.pathParameters['refId']!,
+          quoteId: state.pathParameters['quoteId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/booking/quotes/:refId/schedule',
+        builder: (_, state) => MoveSchedulePage(
+          referenceId: state.pathParameters['refId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/booking/quote-submitted',
+        redirect: (_, state) {
+          final ref = state.uri.queryParameters['ref'];
+          if (ref != null && ref.isNotEmpty) {
+            return '/booking/quotes/$ref/progress';
+          }
+          return '/home';
+        },
+      ),
+      GoRoute(path: '/booking/reference-prices', builder: (_, __) => const ReferencePricesPage()),
       GoRoute(path: '/booking/packages', builder: (_, __) => const ServicePackagesPage()),
       GoRoute(path: '/booking/partners', builder: (_, __) => const ChoosePartnerPage()),
       GoRoute(path: '/pass-items', builder: (_, __) => const PassItemsPage()),
       GoRoute(path: '/pass-items/new', builder: (_, __) => const CreatePassItemPage()),
+      GoRoute(
+        path: '/pass-items/seller/:sellerId',
+        builder: (_, state) => PassItemSellerPage(
+          sellerId: state.pathParameters['sellerId']!,
+          sellerName: state.uri.queryParameters['name'],
+        ),
+      ),
       GoRoute(
         path: '/pass-items/:id',
         builder: (_, state) => PassItemDetailPage(id: state.pathParameters['id']!),

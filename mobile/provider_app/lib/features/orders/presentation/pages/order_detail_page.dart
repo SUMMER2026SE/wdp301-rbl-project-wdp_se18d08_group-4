@@ -179,10 +179,17 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                           const SizedBox(height: 20),
                           ShadButton(
                             width: double.infinity,
+                            onPressed: () => context.push('/orders/${order.id}/tracking'),
+                            leading: const Icon(LucideIcons.navigation, size: 18),
+                            child: const Text('Theo dõi hành trình · chia sẻ vị trí'),
+                          ),
+                          const SizedBox(height: 10),
+                          ShadButton.outline(
+                            width: double.infinity,
                             onPressed: () {
-                              final thread = MockProviderData.chatThreadByCustomer(order.customerId);
-                              if (thread != null) {
-                                context.push('/chat/${thread.id}');
+                              final threadId = MockProviderData.chatThreadIdForOrder(order.id);
+                              if (threadId != null) {
+                                context.push('/chat/$threadId');
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(content: Text('Chưa có hội thoại với $customer')),

@@ -65,6 +65,10 @@ class ApiClient {
     return _unwrap(await dio.patch<dynamic>(path, data: body));
   }
 
+  Future<Map<String, dynamic>> delete(String path) async {
+    return _unwrap(await dio.delete<dynamic>(path));
+  }
+
   /// Upload 1 file qua multipart/form-data (vd: avatar).
   Future<Map<String, dynamic>> uploadFile(
     String path, {

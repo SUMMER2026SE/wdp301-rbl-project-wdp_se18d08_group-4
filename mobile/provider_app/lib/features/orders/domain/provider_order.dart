@@ -309,6 +309,11 @@ class ProviderOrder {
   bool get isCompleted => status == 'completed';
   bool get isCancelled => status == 'cancelled' || status == 'declined';
 
+  /// Chỉ nhắn tin khi đơn chưa kết thúc (chờ nhận / đang thực hiện).
+  bool get canSendChat => isPending || isActive;
+
+  bool get isChatReadOnly => !canSendChat;
+
   /// Thu nhập thực nhận sau phí nền tảng (~15%).
   int get netEarnings => (totalPrice * 0.85).round();
 
@@ -376,6 +381,28 @@ class ProviderOrder {
     if (diff.inHours < 24) return '${diff.inHours} giờ trước';
     return '${diff.inDays} ngày trước';
   }
+}
+
+/// Lọc danh sách đơn trên tab Đơn hàng.
+enum OrderInboxFilter {
+  all('Tất cả'),
+  pending('Chờ nhận'),
+  active('Đang làm'),
+  completed('Hoàn thành'),
+  cancelled('Huỷ / Từ chối');
+
+  const OrderInboxFilter(this.label);
+  final String label;
+
+  String get id => name;
+
+  bool matches(ProviderOrder o) => switch (this) {
+        OrderInboxFilter.all => true,
+        OrderInboxFilter.pending => o.isPending,
+        OrderInboxFilter.active => o.isActive,
+        OrderInboxFilter.completed => o.isCompleted,
+        OrderInboxFilter.cancelled => o.isCancelled,
+      };
 }
 
 /// Lọc lịch sử chuyến trên màn thu nhập.

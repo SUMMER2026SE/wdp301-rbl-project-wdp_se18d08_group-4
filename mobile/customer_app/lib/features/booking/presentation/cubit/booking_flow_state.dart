@@ -20,8 +20,20 @@ class BookingFlowState {
     this.laborQuotes = const [],
     this.helperCount = 0,
     this.laborHours = 2,
-    this.floorCount = 0,
+    this.floorCount = 1,
     this.hasElevator = true,
+    this.pickupFloor = 1,
+    this.pickupHasElevator = true,
+    this.pickupAlleyAccess = AlleyAccess.unknown,
+    this.destinationAlleyAccess = AlleyAccess.unknown,
+    this.cargoVolume = CargoVolume.medium,
+    this.dormNote = '',
+    this.pickupAlleyImagePaths = const [],
+    this.destinationAlleyImagePaths = const [],
+    this.pickupStairImagePaths = const [],
+    this.destinationStairImagePaths = const [],
+    this.cargoImagePaths = const [],
+    this.dormImageUrls = const [],
     this.laborNote = '',
     this.linkedOrderId,
     this.linkedOrderNumber,
@@ -55,6 +67,48 @@ class BookingFlowState {
   final int laborHours;
   final int floorCount;
   final bool hasElevator;
+  final int pickupFloor;
+  final bool pickupHasElevator;
+  final AlleyAccess pickupAlleyAccess;
+  final AlleyAccess destinationAlleyAccess;
+  final CargoVolume cargoVolume;
+  final String dormNote;
+
+  final List<String> pickupAlleyImagePaths;
+  final List<String> destinationAlleyImagePaths;
+  final List<String> pickupStairImagePaths;
+  final List<String> destinationStairImagePaths;
+  final List<String> cargoImagePaths;
+
+  /// URL sau khi upload lên server (khi gửi yêu cầu báo giá).
+  final List<String> dormImageUrls;
+
+  bool get showPickupAlleyPhotos => pickupAlleyAccess.needsAlleyPhoto;
+
+  bool get showDestinationAlleyPhotos => destinationAlleyAccess.needsAlleyPhoto;
+
+  bool get showPickupStairPhotos => !pickupHasElevator;
+
+  bool get showDestinationStairPhotos => !hasElevator;
+
+  bool get showCargoPhotos => cargoVolume.needsCargoPhoto;
+
+  List<String> dormImagePathsFor(DormPhotoSection section) => switch (section) {
+        DormPhotoSection.pickupAlley => pickupAlleyImagePaths,
+        DormPhotoSection.destinationAlley => destinationAlleyImagePaths,
+        DormPhotoSection.pickupStairs => pickupStairImagePaths,
+        DormPhotoSection.destinationStairs => destinationStairImagePaths,
+        DormPhotoSection.cargo => cargoImagePaths,
+      };
+
+  Iterable<String> get activeDormImagePaths sync* {
+    if (showPickupAlleyPhotos) yield* pickupAlleyImagePaths;
+    if (showPickupStairPhotos) yield* pickupStairImagePaths;
+    if (showDestinationAlleyPhotos) yield* destinationAlleyImagePaths;
+    if (showDestinationStairPhotos) yield* destinationStairImagePaths;
+    if (showCargoPhotos) yield* cargoImagePaths;
+  }
+
   final String laborNote;
   final String? linkedOrderId;
   final String? linkedOrderNumber;
@@ -182,6 +236,18 @@ class BookingFlowState {
     int? laborHours,
     int? floorCount,
     bool? hasElevator,
+    int? pickupFloor,
+    bool? pickupHasElevator,
+    AlleyAccess? pickupAlleyAccess,
+    AlleyAccess? destinationAlleyAccess,
+    CargoVolume? cargoVolume,
+    String? dormNote,
+    List<String>? pickupAlleyImagePaths,
+    List<String>? destinationAlleyImagePaths,
+    List<String>? pickupStairImagePaths,
+    List<String>? destinationStairImagePaths,
+    List<String>? cargoImagePaths,
+    List<String>? dormImageUrls,
     String? laborNote,
     String? linkedOrderId,
     String? linkedOrderNumber,
@@ -217,6 +283,18 @@ class BookingFlowState {
       laborHours: laborHours ?? this.laborHours,
       floorCount: floorCount ?? this.floorCount,
       hasElevator: hasElevator ?? this.hasElevator,
+      pickupFloor: pickupFloor ?? this.pickupFloor,
+      pickupHasElevator: pickupHasElevator ?? this.pickupHasElevator,
+      pickupAlleyAccess: pickupAlleyAccess ?? this.pickupAlleyAccess,
+      destinationAlleyAccess: destinationAlleyAccess ?? this.destinationAlleyAccess,
+      cargoVolume: cargoVolume ?? this.cargoVolume,
+      dormNote: dormNote ?? this.dormNote,
+      pickupAlleyImagePaths: pickupAlleyImagePaths ?? this.pickupAlleyImagePaths,
+      destinationAlleyImagePaths: destinationAlleyImagePaths ?? this.destinationAlleyImagePaths,
+      pickupStairImagePaths: pickupStairImagePaths ?? this.pickupStairImagePaths,
+      destinationStairImagePaths: destinationStairImagePaths ?? this.destinationStairImagePaths,
+      cargoImagePaths: cargoImagePaths ?? this.cargoImagePaths,
+      dormImageUrls: dormImageUrls ?? this.dormImageUrls,
       laborNote: laborNote ?? this.laborNote,
       linkedOrderId: clearLinkedOrder ? null : (linkedOrderId ?? this.linkedOrderId),
       linkedOrderNumber:

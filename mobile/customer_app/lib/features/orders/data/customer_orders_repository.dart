@@ -2,6 +2,7 @@ import '../../../core/auth/auth_token_storage.dart';
 import '../../../core/config/dev_config.dart';
 import '../../../core/mock/mock_auth_session.dart';
 import '../../../core/mock/mock_orders_data.dart';
+import '../../booking/data/quote_runtime_store.dart';
 import '../../../core/network/api_client.dart';
 import '../../booking/domain/booking_models.dart';
 import '../../booking/presentation/cubit/booking_flow_state.dart';
@@ -38,6 +39,8 @@ class CustomerOrdersRepository {
       return _mockFilter(activeOnly: activeOnly, completedOnly: completedOnly);
     }
 
+    list = _mergeRuntimeOrders(list);
+
     if (activeOnly) {
       list = list.where((o) => o.status.isActive).toList();
     }
@@ -50,6 +53,9 @@ class CustomerOrdersRepository {
   }
 
   Future<CustomerOrder?> fetchById(String id) async {
+    final runtime = QuoteRuntimeStore.instance.orderById(id);
+    if (runtime != null) return runtime;
+
     if (await _useMockData()) {
       try {
         return MockOrdersData.orders.firstWhere((o) => o.id == id);
@@ -159,8 +165,15 @@ class CustomerOrdersRepository {
     return orderId;
   }
 
+  List<CustomerOrder> _mergeRuntimeOrders(List<CustomerOrder> list) {
+    final runtime = QuoteRuntimeStore.instance.orders;
+    if (runtime.isEmpty) return list;
+    final ids = list.map((o) => o.id).toSet();
+    return [...runtime.where((o) => !ids.contains(o.id)), ...list];
+  }
+
   List<CustomerOrder> _mockFilter({required bool activeOnly, required bool completedOnly}) {
-    var list = MockOrdersData.orders;
+    var list = _mergeRuntimeOrders([...MockOrdersData.orders]);
     if (activeOnly) {
       list = list.where((o) => o.status.isActive).toList();
     }

@@ -143,11 +143,11 @@ class ProviderOnboardingEarningsCard extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              _miniStat('12', 'Đơn xong'),
+              const _miniStat('12', 'Đơn xong'),
               const SizedBox(width: 16),
-              _miniStat('3', 'Đang chạy'),
+              const _miniStat('3', 'Đang chạy'),
               const SizedBox(width: 16),
-              _miniStat('4.9', 'Rating'),
+              const _miniStat('4.9', 'Rating'),
             ],
           ),
         ],

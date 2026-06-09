@@ -162,7 +162,7 @@ function VerifyDialog({
                   className="w-16 h-16 rounded-full flex items-center justify-center shrink-0 text-xl font-bold"
                   style={{ backgroundColor: "var(--primary-tint)", color: "var(--primary)" }}
                 >
-                  {provider.full_name.charAt(0).toUpperCase()}
+                  {provider.full_name ? provider.full_name.charAt(0).toUpperCase() : "?"}
                 </div>
               )}
               <div className="space-y-1">
@@ -495,7 +495,7 @@ export function VerificationsClient({
                                 color: "var(--primary)",
                               }}
                             >
-                              {p.full_name.charAt(0).toUpperCase()}
+                              {p.full_name ? p.full_name.charAt(0).toUpperCase() : "?"}
                             </div>
                           )}
                           <span className="font-medium whitespace-nowrap" style={{ color: "var(--text)" }}>

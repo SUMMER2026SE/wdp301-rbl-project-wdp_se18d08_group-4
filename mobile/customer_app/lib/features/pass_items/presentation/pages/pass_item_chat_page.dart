@@ -35,11 +35,11 @@ class _PassItemChatPageState extends State<PassItemChatPage> {
   List<PassInterestedBuyer> _interested = const [];
   List<PassChatMessage> _messages = const [];
   bool _loading = true;
+  String? _myUserId;
 
   bool get _isSellerInbox => _post?.isMine == true && widget.buyerId == null;
 
-  String? get _threadBuyerId =>
-      _post?.isMine == true ? widget.buyerId : PassItemRepository.currentBuyerId;
+  String? get _threadBuyerId => _post?.isMine == true ? widget.buyerId : _myUserId;
 
   @override
   void initState() {
@@ -55,6 +55,7 @@ class _PassItemChatPageState extends State<PassItemChatPage> {
   }
 
   Future<void> _load() async {
+    final myUserId = await _repo.currentUserId();
     final post = await _repo.byId(widget.id);
     if (!mounted) return;
     if (post == null) {
@@ -70,13 +71,23 @@ class _PassItemChatPageState extends State<PassItemChatPage> {
       if (!mounted) return;
       setState(() {
         _post = post;
+        _myUserId = myUserId;
         _interested = interested;
         _loading = false;
       });
       return;
     }
 
-    final buyerId = post.isMine ? widget.buyerId! : PassItemRepository.currentBuyerId;
+    final buyerId = post.isMine ? widget.buyerId! : myUserId;
+    if (buyerId == null) {
+      if (!mounted) return;
+      setState(() {
+        _post = post;
+        _myUserId = myUserId;
+        _loading = false;
+      });
+      return;
+    }
     final interested = post.isMine ? await _repo.interestedBuyers(widget.id) : <PassInterestedBuyer>[];
     PassInterestedBuyer? buyer;
     if (post.isMine) {
@@ -91,6 +102,7 @@ class _PassItemChatPageState extends State<PassItemChatPage> {
     if (!mounted) return;
     setState(() {
       _post = post;
+      _myUserId = myUserId;
       _activeBuyer = buyer;
       _messages = msgs;
       _loading = false;
@@ -203,7 +215,7 @@ class _PassItemChatPageState extends State<PassItemChatPage> {
     if (agreed == null || !mounted) return;
 
     final price = agreed == -1 ? null : agreed;
-    final ok = await _repo.confirmDeal(widget.id, agreedPrice: price);
+    final ok = await _repo.confirmDeal(widget.id, agreedPrice: price, buyerId: widget.buyerId);
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(

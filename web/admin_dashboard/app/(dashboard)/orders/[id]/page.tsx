@@ -210,9 +210,9 @@ async function OrderDetailContent({ id }: { id: string }) {
                     className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shrink-0"
                     style={{ backgroundColor: "var(--primary-tint)", color: "var(--primary)" }}
                   >
-                    {o.customer.full_name.charAt(0).toUpperCase()}
+                    {o.customer?.full_name ? o.customer.full_name.charAt(0).toUpperCase() : "?"}
                   </div>
-                )}
+                )}}
                 <div>
                   <p className="font-semibold" style={{ color: "var(--text)" }}>{o.customer.full_name}</p>
                   <p className="text-xs" style={{ color: "var(--muted)" }}>Khách hàng</p>
@@ -352,9 +352,9 @@ async function OrderDetailContent({ id }: { id: string }) {
                 className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shrink-0"
                 style={{ backgroundColor: "var(--primary-tint)", color: "var(--primary)" }}
               >
-                {o.provider.full_name.charAt(0).toUpperCase()}
+                {o.provider?.full_name ? o.provider.full_name.charAt(0).toUpperCase() : "?"}
               </div>
-            )}
+            )}}
             <div className="flex-1 min-w-0">
               <p className="font-semibold truncate" style={{ color: "var(--text)" }}>
                 {o.provider.full_name}

@@ -106,10 +106,10 @@ class OnboardingPriceCards extends StatelessWidget {
                         SizedBox(height: 10),
                         Row(
                           children: [
-                            _AvatarChip('L', AppColors.accentOrange),
-                            _AvatarChip('M', AppColors.success),
+                            const _AvatarChip('L', AppColors.accentOrange),
+                            const _AvatarChip('M', AppColors.success),
                             _AvatarChip('T', Color(0xFFEC4899)),
-                            _AvatarChip('+2', AppColors.outline),
+                            const _AvatarChip('+2', AppColors.outline),
                           ],
                         ),
                       ],
@@ -202,10 +202,10 @@ class OnboardingTrackingCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _TimelineStep('Đã nhận đơn', '09:02', done: true),
-          _TimelineStep('Đang lấy đồ tại KTX A', '09:24', done: true),
-          _TimelineStep('Đang di chuyển', 'now', active: true),
-          _TimelineStep('Giao đến trọ mới', '--', pending: true),
+          const _TimelineStep('Đã nhận đơn', '09:02', done: true),
+          const _TimelineStep('Đang lấy đồ tại KTX A', '09:24', done: true),
+          const _TimelineStep('Đang di chuyển', 'now', active: true),
+          const _TimelineStep('Giao đến trọ mới', '--', pending: true),
         ],
       ),
     );

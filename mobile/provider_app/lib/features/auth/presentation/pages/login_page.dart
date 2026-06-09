@@ -68,6 +68,27 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  Future<void> _demoLogin() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _emailCtrl.text = DevConfig.demoEmail;
+      _passwordCtrl.text = DevConfig.demoPassword;
+    });
+    try {
+      await ref.read(authRepositoryProvider).signIn(
+            email: DevConfig.demoEmail,
+            password: DevConfig.demoPassword,
+          );
+      if (!mounted) return;
+      context.go('/home');
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   Widget _stagger(int index, Widget child) {
     final delay = (65 * index).ms;
     return child
@@ -324,22 +345,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                         ),
                                       ),
                                       if (DevConfig.useMockAuth) ...[
-                                        const SizedBox(height: 16),
+                                        const SizedBox(height: 12),
                                         _stagger(
                                           7,
                                           ShadButton.outline(
                                             size: ShadButtonSize.lg,
                                             width: double.infinity,
                                             enabled: !_loading,
-                                            leading: const Icon(LucideIcons.userRound, size: 18),
-                                            onPressed: _loading
-                                                ? null
-                                                : () {
-                                                    _emailCtrl.text = DevConfig.demoEmail;
-                                                    _passwordCtrl.text = DevConfig.demoPassword;
-                                                    _submit(shadContext);
-                                                  },
-                                            child: const Text('Dùng tài khoản demo'),
+                                            onPressed: _loading ? null : _demoLogin,
+                                            child: const Text('Đăng nhập demo (không cần API)'),
                                           ),
                                         ),
                                       ],

@@ -1,5 +1,7 @@
 const { supabaseAdmin } = require('../services/supabase.service');
 const authService = require('../services/auth.service');
+const customersService = require('../services/customers.service');
+const { normalizePhone } = require('../services/auth.helpers');
 
 /**
  * Admin login — Node JWT (user_credentials), không dùng Supabase Auth.
@@ -79,6 +81,120 @@ async function getProfile(req, res) {
 }
 
 /**
+ * Update admin profile
+ * PATCH /api/admin/auth/profile
+ */
+async function updateProfile(req, res) {
+  try {
+    const { full_name, phone } = req.body || {};
+
+    if (req.body?.email !== undefined || req.body?.role !== undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Không được sửa email hoặc role',
+      });
+    }
+
+    const updates = {};
+    if (full_name !== undefined) {
+      const name = String(full_name).trim();
+      if (!name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Họ tên không được để trống',
+        });
+      }
+      updates.full_name = name;
+    }
+    if (phone !== undefined) {
+      const raw = String(phone).trim();
+      updates.phone = raw ? normalizePhone(raw) : null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Không có trường hợp lệ để cập nhật',
+      });
+    }
+
+    updates.updated_at = new Date().toISOString();
+
+    const { data: profile, error } = await supabaseAdmin
+      .from('profiles')
+      .update(updates)
+      .eq('id', req.user.id)
+      .select('id, email, full_name, role, avatar_url, phone, created_at, updated_at')
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Cập nhật hồ sơ thành công',
+      data: profile,
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+        code: error.code,
+      });
+    }
+    console.error('Update admin profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi cập nhật hồ sơ',
+    });
+  }
+}
+
+/**
+ * Upload admin avatar
+ * POST /api/admin/auth/avatar
+ */
+async function uploadAvatar(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Không có file được upload (field: avatar)',
+      });
+    }
+
+    await customersService.uploadAvatar(req.user.id, req.file);
+
+    const { data: profile, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, avatar_url, phone, created_at, updated_at')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error || !profile) throw error || new Error('Profile not found');
+
+    res.json({
+      success: true,
+      message: 'Cập nhật ảnh đại diện thành công',
+      data: profile,
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+        code: error.code,
+      });
+    }
+    console.error('Upload admin avatar error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi upload ảnh đại diện',
+    });
+  }
+}
+
+/**
  * Admin dashboard stats - Morning KPI Dashboard
  * GET /api/admin/dashboard
  */
@@ -86,9 +202,9 @@ async function getDashboard(req, res) {
   try {
     const now = new Date();
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    // GMV Yesterday
     const { data: gmvYesterday } = await supabaseAdmin
       .from('orders')
       .select('total_price')
@@ -98,101 +214,57 @@ async function getDashboard(req, res) {
 
     const gmv_yesterday = gmvYesterday?.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0) || 0;
 
-    const { count: new_orders_24h } = await supabaseAdmin
+    // Orders Yesterday  
+    const { count: orders_yesterday } = await supabaseAdmin
       .from('orders')
       .select('*', { count: 'exact', head: true })
-      .gte('created_at', last24h.toISOString());
+      .gte('created_at', yesterday.toISOString().split('T')[0])
+      .lt('created_at', now.toISOString().split('T')[0]);
 
-    const { count: active_customers } = await supabaseAdmin
-      .from('orders')
-      .select('customer_id', { count: 'exact', head: true })
-      .gte('created_at', new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString());
-
-    const { count: active_providers } = await supabaseAdmin
-      .from('provider_profiles')
+    // Active Users
+    const { count: active_users } = await supabaseAdmin
+      .from('profiles')
       .select('*', { count: 'exact', head: true })
-      .eq('is_available', true)
-      .eq('is_verified', true);
+      .eq('status', 'active');
 
-    const { data: commissionData } = await supabaseAdmin
-      .from('provider_earnings')
-      .select('platform_commission')
-      .gte('created_at', startOfMonth.toISOString());
-
-    const commission_total = commissionData?.reduce((sum, earning) => sum + parseFloat(earning.platform_commission || 0), 0) || 0;
-
-    const { data: ordersLast24h } = await supabaseAdmin
-      .from('orders')
-      .select('status')
-      .gte('created_at', last24h.toISOString());
-
-    const totalOrders24h = ordersLast24h?.length || 0;
-    const completedOrders24h = ordersLast24h?.filter((o) => o.status === 'completed').length || 0;
-    const completion_rate_24h = totalOrders24h > 0 ? (completedOrders24h / totalOrders24h) * 100 : 0;
-
-    const { data: monthOrders } = await supabaseAdmin
-      .from('orders')
-      .select('total_price')
-      .eq('status', 'completed')
-      .gte('created_at', startOfMonth.toISOString());
-
-    const monthRevenue = monthOrders?.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0) || 0;
-    const average_order_value = monthOrders?.length > 0 ? monthRevenue / monthOrders.length : 0;
-
+    // Pending Verifications
     const { count: pending_verifications } = await supabaseAdmin
       .from('provider_profiles')
       .select('*', { count: 'exact', head: true })
       .eq('verification_status', 'pending');
 
-    const { count: pending_disputes } = await supabaseAdmin
+    // Open Disputes
+    const { count: open_disputes } = await supabaseAdmin
       .from('disputes')
       .select('*', { count: 'exact', head: true })
       .in('status', ['open', 'investigating']);
 
-    const { count: pending_withdrawals } = await supabaseAdmin
-      .from('provider_withdrawals')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending');
+    // Platform Commission (this month)
+    const { data: commissionsThisMonth } = await supabaseAdmin
+      .from('provider_earnings')
+      .select('platform_commission')
+      .gte('created_at', startOfMonth.toISOString());
 
-    const { count: new_customers_24h } = await supabaseAdmin
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('role', 'customer')
-      .gte('created_at', last24h.toISOString());
-
-    const { count: new_providers_24h } = await supabaseAdmin
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('role', 'provider')
-      .gte('created_at', last24h.toISOString());
+    const platform_commission = commissionsThisMonth?.reduce(
+      (sum, earning) => sum + parseFloat(earning.platform_commission || 0), 0
+    ) || 0;
 
     res.json({
       success: true,
       data: {
-        gmv_yesterday: Math.round(gmv_yesterday),
-        new_orders_24h,
-        active_customers,
-        active_providers,
-        commission_total: Math.round(commission_total),
-        completion_rate_24h: Math.round(completion_rate_24h * 100) / 100,
-        average_order_value: Math.round(average_order_value),
-        new_customers_24h,
-        new_providers_24h,
-        pending_tasks: {
-          verifications: pending_verifications || 0,
-          disputes: pending_disputes || 0,
-          withdrawals: pending_withdrawals || 0,
-          total: (pending_verifications || 0) + (pending_disputes || 0) + (pending_withdrawals || 0),
-        },
-        generated_at: now.toISOString(),
-        timezone: 'Asia/Ho_Chi_Minh',
+        gmv_yesterday,
+        orders_yesterday: orders_yesterday || 0,
+        active_users: active_users || 0,
+        pending_verifications: pending_verifications || 0,
+        open_disputes: open_disputes || 0,
+        platform_commission,
       },
     });
   } catch (error) {
-    console.error('Get dashboard error:', error);
+    console.error('Admin dashboard error:', error);
     res.status(500).json({
       success: false,
-      message: 'Lỗi server khi lấy dashboard KPI',
+      message: 'Lỗi server khi lấy dashboard',
     });
   }
 }
@@ -562,14 +634,1716 @@ async function resolveDispute(req, res) {
   }
 }
 
+/**
+ * Users Management APIs
+ */
+
+/** GET /api/admin/users */
+async function getUsers(req, res) {
+  try {
+    const { 
+      role = 'all', 
+      search = '', 
+      status = 'all', 
+      page = 1, 
+      pageSize = 20 
+    } = req.query;
+    
+    const offset = (page - 1) * pageSize;
+
+    let query = supabaseAdmin
+      .from('profiles')
+      .select(`
+        id,
+        email,
+        phone,
+        full_name,
+        avatar_url,
+        role,
+        status,
+        created_at,
+        updated_at,
+        customer_profiles!customer_profiles_id_fkey (
+          university,
+          total_orders,
+          total_spent
+        ),
+        provider_profiles!provider_profiles_id_fkey (
+          business_name,
+          vehicle_type,
+          vehicle_plate,
+          rating,
+          total_reviews,
+          total_orders,
+          total_earnings,
+          verification_status,
+          is_verified
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (role !== 'all') {
+      query = query.eq('role', role);
+    }
+    
+    if (status !== 'all') {
+      query = query.eq('status', status);
+    }
+    
+    if (search) {
+      query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+    }
+
+    const { data: users, error } = await query;
+    if (error) throw error;
+
+    const flattened = (users || []).map((user) => {
+      const cp = Array.isArray(user.customer_profiles)
+        ? user.customer_profiles[0]
+        : user.customer_profiles;
+      const pp = Array.isArray(user.provider_profiles)
+        ? user.provider_profiles[0]
+        : user.provider_profiles;
+      const { customer_profiles, provider_profiles, ...base } = user;
+      return {
+        ...base,
+        university: cp?.university ?? null,
+        total_orders: cp?.total_orders ?? pp?.total_orders ?? 0,
+        total_spent: cp?.total_spent ?? 0,
+        business_name: pp?.business_name ?? null,
+        vehicle_type: pp?.vehicle_type ?? null,
+        vehicle_plate: pp?.vehicle_plate ?? null,
+        rating: pp?.rating ?? null,
+        total_reviews: pp?.total_reviews ?? 0,
+        total_earnings: pp?.total_earnings ?? 0,
+        verification_status: pp?.verification_status ?? 'pending',
+        is_verified: pp?.is_verified ?? false,
+      };
+    });
+
+    // Get total count for pagination
+    let countQuery = supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true });
+    if (role !== 'all') countQuery = countQuery.eq('role', role);
+    if (status !== 'all') countQuery = countQuery.eq('status', status);
+    if (search) countQuery = countQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+    
+    const { count } = await countQuery;
+
+    res.json({
+      success: true,
+      data: flattened,
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách người dùng'
+    });
+  }
+}
+
+/** PATCH /api/admin/users/:id/status */
+async function updateUserStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    const validStatuses = ['active', 'inactive', 'suspended', 'pending_verification'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status không hợp lệ'
+      });
+    }
+
+    const { data: updatedUser, error } = await supabaseAdmin
+      .from('profiles')
+      .update({ 
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    // Create notification
+    const statusMessages = {
+      active: 'Tài khoản đã được kích hoạt',
+      inactive: 'Tài khoản đã bị vô hiệu hóa',
+      suspended: 'Tài khoản đã bị tạm khóa',
+      pending_verification: 'Tài khoản cần xác minh'
+    };
+
+    await supabaseAdmin.from('notifications').insert({
+      user_id: id,
+      notification_type: 'account_status_update',
+      title: 'Cập nhật trạng thái tài khoản',
+      body: statusMessages[status],
+      priority: status === 'suspended' ? 'high' : 'normal'
+    });
+
+    res.json({
+      success: true,
+      message: 'Cập nhật trạng thái người dùng thành công',
+      data: updatedUser
+    });
+  } catch (error) {
+    console.error('Update user status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi cập nhật trạng thái người dùng'
+    });
+  }
+}
+
+/**
+ * Orders Management APIs
+ */
+
+/** GET /api/admin/orders */
+async function getOrders(req, res) {
+  try {
+    const { 
+      status = 'all', 
+      search = '', 
+      page = 1, 
+      pageSize = 20,
+      dateFrom,
+      dateTo
+    } = req.query;
+    
+    const offset = (page - 1) * pageSize;
+
+    let query = supabaseAdmin
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        status,
+        total_price,
+        pickup_address,
+        delivery_address,
+        scheduled_pickup_time,
+        created_at,
+        completed_at,
+        customer:profiles!orders_customer_id_fkey(
+          full_name,
+          email,
+          phone
+        ),
+        provider:provider_profiles!orders_provider_id_fkey(
+          business_name,
+          profiles!provider_profiles_id_fkey(
+            full_name,
+            phone
+          )
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (status !== 'all') {
+      query = query.eq('status', status);
+    }
+    
+    if (search) {
+      query = query.ilike('order_number', `%${search}%`);
+    }
+
+    if (dateFrom) {
+      query = query.gte('created_at', dateFrom);
+    }
+    
+    if (dateTo) {
+      query = query.lte('created_at', dateTo);
+    }
+
+    const { data: orders, error } = await query;
+    if (error) throw error;
+
+    // Get total count
+    let countQuery = supabaseAdmin.from('orders').select('*', { count: 'exact', head: true });
+    if (status !== 'all') countQuery = countQuery.eq('status', status);
+    if (search) countQuery = countQuery.ilike('order_number', `%${search}%`);
+    if (dateFrom) countQuery = countQuery.gte('created_at', dateFrom);
+    if (dateTo) countQuery = countQuery.lte('created_at', dateTo);
+    
+    const { count } = await countQuery;
+
+    res.json({
+      success: true,
+      data: orders || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách đơn hàng'
+    });
+  }
+}
+
+/** GET /api/admin/orders/:id */
+async function getOrderById(req, res) {
+  try {
+    const { id } = req.params;
+
+    const { data: order, error } = await supabaseAdmin
+      .from('orders')
+      .select(`
+        *,
+        customer:profiles!orders_customer_id_fkey(
+          full_name,
+          email,
+          phone,
+          avatar_url
+        ),
+        provider:provider_profiles!orders_provider_id_fkey(
+          business_name,
+          vehicle_type,
+          vehicle_plate,
+          profiles!provider_profiles_id_fkey(
+            full_name,
+            phone,
+            avatar_url
+          )
+        ),
+        order_status_history(
+          from_status,
+          to_status,
+          notes,
+          created_at,
+          changed_by_profile:profiles!order_status_history_changed_by_fkey(
+            full_name,
+            role
+          )
+        ),
+        payments(
+          id,
+          amount,
+          status,
+          payment_method,
+          created_at,
+          paid_at
+        ),
+        order_items(
+          item_name,
+          quantity,
+          estimated_weight,
+          is_fragile,
+          notes,
+          image_url
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy đơn hàng'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: order
+    });
+  } catch (error) {
+    console.error('Get order by ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy chi tiết đơn hàng'
+    });
+  }
+}
+
+/** PUT /api/admin/orders/:id/cancel */
+async function forceCancelOrder(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lý do hủy đơn là bắt buộc'
+      });
+    }
+
+    const { data: updatedOrder, error } = await supabaseAdmin
+      .from('orders')
+      .update({
+        status: 'cancelled',
+        cancellation_reason: reason,
+        cancelled_by: req.user.id,
+        cancelled_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        customer:profiles!orders_customer_id_fkey(full_name, email)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Add to status history
+    await supabaseAdmin.from('order_status_history').insert({
+      order_id: id,
+      from_status: updatedOrder.status,
+      to_status: 'cancelled',
+      changed_by: req.user.id,
+      notes: `Admin hủy đơn: ${reason}`
+    });
+
+    // Notify customer
+    await supabaseAdmin.from('notifications').insert({
+      user_id: updatedOrder.customer_id,
+      notification_type: 'order_cancelled',
+      title: 'Đơn hàng đã bị hủy',
+      body: `Đơn hàng ${updatedOrder.order_number} đã bị hủy bởi admin. Lý do: ${reason}`,
+      priority: 'high',
+      order_id: id
+    });
+
+    res.json({
+      success: true,
+      message: 'Hủy đơn hàng thành công',
+      data: updatedOrder
+    });
+  } catch (error) {
+    console.error('Force cancel order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi hủy đơn hàng'
+    });
+  }
+}
+
+/**
+ * Reviews Management APIs
+ */
+
+/** GET /api/admin/reviews */
+async function getReviews(req, res) {
+  try {
+    const { 
+      flagged = 'all', 
+      hidden = 'all', 
+      page = 1, 
+      pageSize = 20 
+    } = req.query;
+    
+    const offset = (page - 1) * pageSize;
+
+    let query = supabaseAdmin
+      .from('reviews')
+      .select(`
+        id,
+        rating,
+        title,
+        comment,
+        is_published,
+        is_flagged,
+        flagged_reason,
+        is_hidden,
+        hidden_reason,
+        created_at,
+        moderated_at,
+        order:orders!reviews_order_id_fkey(
+          order_number
+        ),
+        customer:profiles!reviews_customer_id_fkey(
+          full_name,
+          email
+        ),
+        provider:provider_profiles!reviews_provider_id_fkey(
+          business_name,
+          profiles!provider_profiles_id_fkey(
+            full_name
+          )
+        ),
+        moderated_by_profile:profiles!reviews_moderated_by_fkey(
+          full_name
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (flagged === 'true') {
+      query = query.eq('is_flagged', true);
+    } else if (flagged === 'false') {
+      query = query.eq('is_flagged', false);
+    }
+    
+    if (hidden === 'true') {
+      query = query.eq('is_hidden', true);
+    } else if (hidden === 'false') {
+      query = query.eq('is_hidden', false);
+    }
+
+    const { data: reviews, error } = await query;
+    if (error) throw error;
+
+    // Get total count
+    let countQuery = supabaseAdmin.from('reviews').select('*', { count: 'exact', head: true });
+    if (flagged === 'true') countQuery = countQuery.eq('is_flagged', true);
+    else if (flagged === 'false') countQuery = countQuery.eq('is_flagged', false);
+    if (hidden === 'true') countQuery = countQuery.eq('is_hidden', true);
+    else if (hidden === 'false') countQuery = countQuery.eq('is_hidden', false);
+    
+    const { count } = await countQuery;
+
+    res.json({
+      success: true,
+      data: reviews || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get reviews error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách đánh giá'
+    });
+  }
+}
+
+/** PUT /api/admin/reviews/:id/hide */
+async function hideReview(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const { data: updatedReview, error } = await supabaseAdmin
+      .from('reviews')
+      .update({
+        is_hidden: true,
+        hidden_reason: reason,
+        is_published: false,
+        moderated_by: req.user.id,
+        moderated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Ẩn đánh giá thành công',
+      data: updatedReview
+    });
+  } catch (error) {
+    console.error('Hide review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi ẩn đánh giá'
+    });
+  }
+}
+
+/** PUT /api/admin/reviews/:id/unhide */
+async function unhideReview(req, res) {
+  try {
+    const { id } = req.params;
+
+    const { data: updatedReview, error } = await supabaseAdmin
+      .from('reviews')
+      .update({
+        is_hidden: false,
+        hidden_reason: null,
+        is_published: true,
+        moderated_by: req.user.id,
+        moderated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Hiện đánh giá thành công',
+      data: updatedReview
+    });
+  } catch (error) {
+    console.error('Unhide review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi hiện đánh giá'
+    });
+  }
+}
+
+/** PUT /api/admin/reviews/:id/flag */
+async function flagReview(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const { data: updatedReview, error } = await supabaseAdmin
+      .from('reviews')
+      .update({
+        is_flagged: true,
+        flagged_reason: reason
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Gắn cờ đánh giá thành công',
+      data: updatedReview
+    });
+  } catch (error) {
+    console.error('Flag review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi gắn cờ đánh giá'
+    });
+  }
+}
+
+/**
+ * Refunds Management APIs
+ */
+
+/** GET /api/admin/refunds */
+async function getRefunds(req, res) {
+  try {
+    const { 
+      status = 'all', 
+      page = 1, 
+      pageSize = 20 
+    } = req.query;
+    
+    const offset = (page - 1) * pageSize;
+
+    let query = supabaseAdmin
+      .from('refunds')
+      .select(`
+        id,
+        refund_amount,
+        refund_reason,
+        status,
+        created_at,
+        processed_at,
+        order:orders!refunds_order_id_fkey(
+          order_number,
+          total_price
+        ),
+        payment:payments!refunds_payment_id_fkey(
+          payment_code,
+          amount
+        ),
+        requested_by_profile:profiles!refunds_requested_by_fkey(
+          full_name,
+          email
+        ),
+        approved_by_profile:profiles!refunds_approved_by_fkey(
+          full_name
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    const { data: refunds, error } = await query;
+    if (error) throw error;
+
+    // Get total count
+    let countQuery = supabaseAdmin.from('refunds').select('*', { count: 'exact', head: true });
+    if (status !== 'all') countQuery = countQuery.eq('status', status);
+    
+    const { count } = await countQuery;
+
+    res.json({
+      success: true,
+      data: refunds || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get refunds error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách hoàn tiền'
+    });
+  }
+}
+
+/** PUT /api/admin/refunds/:id/approve */
+async function approveRefund(req, res) {
+  try {
+    const { id } = req.params;
+
+    const { data: updatedRefund, error } = await supabaseAdmin
+      .from('refunds')
+      .update({
+        status: 'completed',
+        approved_by: req.user.id,
+        processed_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        requested_by_profile:profiles!refunds_requested_by_fkey(full_name, email)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Notify user
+    await supabaseAdmin.from('notifications').insert({
+      user_id: updatedRefund.requested_by,
+      notification_type: 'refund_approved',
+      title: 'Hoàn tiền đã được duyệt',
+      body: `Yêu cầu hoàn tiền ${updatedRefund.refund_amount.toLocaleString()}đ đã được duyệt`,
+      priority: 'normal'
+    });
+
+    res.json({
+      success: true,
+      message: 'Duyệt hoàn tiền thành công',
+      data: updatedRefund
+    });
+  } catch (error) {
+    console.error('Approve refund error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi duyệt hoàn tiền'
+    });
+  }
+}
+
+/**
+ * Analytics APIs
+ */
+
+/** GET /api/admin/analytics/gmv */
+async function getGMVStats(req, res) {
+  try {
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    // This month GMV
+    const { data: thisMonthOrders } = await supabaseAdmin
+      .from('orders')
+      .select('total_price')
+      .eq('status', 'completed')
+      .gte('completed_at', thisMonth.toISOString());
+
+    const thisGMV = thisMonthOrders?.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0) || 0;
+
+    // Last month GMV
+    const { data: lastMonthOrders } = await supabaseAdmin
+      .from('orders')
+      .select('total_price')
+      .eq('status', 'completed')
+      .gte('completed_at', lastMonth.toISOString())
+      .lte('completed_at', lastMonthEnd.toISOString());
+
+    const lastGMV = lastMonthOrders?.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0) || 0;
+
+    const growth = lastGMV > 0 ? ((thisGMV - lastGMV) / lastGMV) * 100 : 0;
+
+    res.json({
+      success: true,
+      data: {
+        thisGMV,
+        lastGMV,
+        growth
+      }
+    });
+  } catch (error) {
+    console.error('Get GMV stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy thống kê GMV'
+    });
+  }
+}
+
+/** GET /api/admin/analytics/orders */
+async function getOrderStatistics(req, res) {
+  try {
+    const { startDate, endDate } = req.query;
+    const now = new Date();
+    const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    const start = startDate ? new Date(startDate) : defaultStart;
+    const end = endDate ? new Date(endDate) : now;
+
+    const { data: orders } = await supabaseAdmin
+      .from('orders')
+      .select('id, status, total_price')
+      .gte('created_at', start.toISOString())
+      .lte('created_at', end.toISOString());
+
+    const total_orders = orders?.length || 0;
+    const completed_count = orders?.filter(o => o.status === 'completed').length || 0;
+    const cancelled_count = orders?.filter(o => o.status === 'cancelled').length || 0;
+    const total_revenue = orders?.filter(o => o.status === 'completed')
+      .reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0) || 0;
+    const average_order_value = completed_count > 0 ? total_revenue / completed_count : 0;
+    const completion_rate = total_orders > 0 ? (completed_count / total_orders) * 100 : 0;
+
+    res.json({
+      success: true,
+      data: {
+        total_orders,
+        completed_count,
+        cancelled_count,
+        total_revenue,
+        average_order_value,
+        completion_rate
+      }
+    });
+  } catch (error) {
+    console.error('Get order statistics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy thống kê đơn hàng'
+    });
+  }
+}
+
+/** GET /api/admin/analytics/providers */
+async function getTopProviders(req, res) {
+  try {
+    const { limit = 10 } = req.query;
+
+    const { data: providers } = await supabaseAdmin
+      .from('provider_profiles')
+      .select(`
+        id,
+        business_name,
+        rating,
+        total_reviews,
+        total_orders,
+        profiles!provider_profiles_id_fkey(
+          full_name
+        )
+      `)
+      .eq('is_verified', true)
+      .order('total_orders', { ascending: false })
+      .limit(limit);
+
+    res.json({
+      success: true,
+      data: providers || []
+    });
+  } catch (error) {
+    console.error('Get top providers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy top nhà cung cấp'
+    });
+  }
+}
+
+/** GET /api/admin/analytics/commission */
+async function getPlatformCommissionByMonth(req, res) {
+  try {
+    const { months = 6 } = req.query;
+    const now = new Date();
+    const results = [];
+
+    for (let i = months - 1; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+
+      const { data: earnings } = await supabaseAdmin
+        .from('provider_earnings')
+        .select('platform_commission')
+        .gte('created_at', monthStart.toISOString())
+        .lte('created_at', monthEnd.toISOString());
+
+      const commission = earnings?.reduce((sum, earning) => sum + parseFloat(earning.platform_commission || 0), 0) || 0;
+
+      results.push({
+        month: monthStart.toISOString().substr(0, 7), // YYYY-MM
+        commission
+      });
+    }
+
+    res.json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    console.error('Get commission by month error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy thống kê hoa hồng'
+    });
+  }
+}
+
+/** GET /api/admin/analytics/revenue */
+async function getRevenueByMonth(req, res) {
+  try {
+    const { months = 12 } = req.query;
+    const now = new Date();
+    const results = [];
+
+    for (let i = months - 1; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+
+      const { data: orders } = await supabaseAdmin
+        .from('orders')
+        .select('total_price')
+        .eq('status', 'completed')
+        .gte('completed_at', monthStart.toISOString())
+        .lte('completed_at', monthEnd.toISOString());
+
+      const revenue = orders?.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0) || 0;
+
+      results.push({
+        month: monthStart.toISOString().substr(0, 7), // YYYY-MM
+        revenue
+      });
+    }
+
+    res.json({
+      success: true,
+      data: results
+    });
+  } catch (error) {
+    console.error('Get revenue by month error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy doanh thu theo tháng'
+    });
+  }
+}
+
+/**
+ * Notifications/Announcements APIs  
+ */
+
+/** GET /api/admin/announcements */
+async function getAnnouncements(req, res) {
+  try {
+    const { page = 1, pageSize = 20 } = req.query;
+    const offset = (page - 1) * pageSize;
+
+    const { data: announcements, error } = await supabaseAdmin
+      .from('announcements')
+      .select(`
+        id,
+        title,
+        body,
+        target_audience,
+        target_cities,
+        priority,
+        scheduled_at,
+        published_at,
+        expires_at,
+        is_published,
+        is_active,
+        sent_count,
+        read_count,
+        created_at,
+        created_by_profile:profiles!announcements_created_by_fkey(
+          full_name
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const { count } = await supabaseAdmin
+      .from('announcements')
+      .select('*', { count: 'exact', head: true });
+
+    res.json({
+      success: true,
+      data: announcements || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get announcements error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách thông báo'
+    });
+  }
+}
+
+/** POST /api/admin/announcements */
+async function createAnnouncement(req, res) {
+  try {
+    const { 
+      title, 
+      body, 
+      targetAudience = 'all', 
+      targetCities, 
+      priority = 'normal', 
+      scheduledAt 
+    } = req.body;
+
+    if (!title || !body) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title và body là bắt buộc'
+      });
+    }
+
+    const isPublished = !scheduledAt; // Publish ngay nếu không có scheduledAt
+
+    const { data: announcement, error } = await supabaseAdmin
+      .from('announcements')
+      .insert({
+        title,
+        body,
+        target_audience: targetAudience,
+        target_cities: targetCities,
+        priority,
+        scheduled_at: scheduledAt,
+        is_published: isPublished,
+        published_at: isPublished ? new Date().toISOString() : null,
+        created_by: req.user.id
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Tạo thông báo thành công',
+      data: announcement
+    });
+  } catch (error) {
+    console.error('Create announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi tạo thông báo'
+    });
+  }
+}
+
+/** PUT /api/admin/announcements/:id/publish */
+async function publishAnnouncement(req, res) {
+  try {
+    const { id } = req.params;
+
+    const { data: announcement, error } = await supabaseAdmin
+      .from('announcements')
+      .update({
+        is_published: true,
+        published_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Xuất bản thông báo thành công',
+      data: announcement
+    });
+  } catch (error) {
+    console.error('Publish announcement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xuất bản thông báo'
+    });
+  }
+}
+
+/**
+ * Activity Logs APIs
+ */
+
+/** GET /api/admin/activity/orders */
+async function getOrderStatusHistory(req, res) {
+  try {
+    const { page = 1, pageSize = 20 } = req.query;
+    const offset = (page - 1) * pageSize;
+
+    const { data: history, error } = await supabaseAdmin
+      .from('order_status_history')
+      .select(`
+        id,
+        from_status,
+        to_status,
+        notes,
+        created_at,
+        order:orders!order_status_history_order_id_fkey(
+          order_number,
+          customer:profiles!orders_customer_id_fkey(full_name)
+        ),
+        changed_by_profile:profiles!order_status_history_changed_by_fkey(
+          full_name,
+          role
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const { count } = await supabaseAdmin
+      .from('order_status_history')
+      .select('*', { count: 'exact', head: true });
+
+    res.json({
+      success: true,
+      data: history || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get order status history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy lịch sử đơn hàng'
+    });
+  }
+}
+
+/** GET /api/admin/activity/verifications */
+async function getVerificationHistory(req, res) {
+  try {
+    const { page = 1, pageSize = 20 } = req.query;
+    const offset = (page - 1) * pageSize;
+
+    const { data: history, error } = await supabaseAdmin
+      .from('provider_profiles')
+      .select(`
+        id,
+        business_name,
+        verification_status,
+        verification_notes,
+        verified_at,
+        profiles!provider_profiles_id_fkey(
+          full_name,
+          email
+        ),
+        verified_by_profile:profiles!provider_profiles_verified_by_fkey(
+          full_name
+        )
+      `)
+      .not('verified_at', 'is', null)
+      .range(offset, offset + pageSize - 1)
+      .order('verified_at', { ascending: false });
+
+    if (error) throw error;
+
+    const { count } = await supabaseAdmin
+      .from('provider_profiles')
+      .select('*', { count: 'exact', head: true })
+      .not('verified_at', 'is', null);
+
+    res.json({
+      success: true,
+      data: history || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get verification history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy lịch sử xác minh'
+    });
+  }
+}
+
+/** GET /api/admin/activity/refunds */
+async function getRefundHistory(req, res) {
+  try {
+    const { page = 1, pageSize = 20 } = req.query;
+    const offset = (page - 1) * pageSize;
+
+    const { data: history, error } = await supabaseAdmin
+      .from('refunds')
+      .select(`
+        id,
+        refund_amount,
+        refund_reason,
+        status,
+        processed_at,
+        order:orders!refunds_order_id_fkey(
+          order_number
+        ),
+        requested_by_profile:profiles!refunds_requested_by_fkey(
+          full_name,
+          email
+        ),
+        approved_by_profile:profiles!refunds_approved_by_fkey(
+          full_name
+        )
+      `)
+      .not('processed_at', 'is', null)
+      .range(offset, offset + pageSize - 1)
+      .order('processed_at', { ascending: false });
+
+    if (error) throw error;
+
+    const { count } = await supabaseAdmin
+      .from('refunds')
+      .select('*', { count: 'exact', head: true })
+      .not('processed_at', 'is', null);
+
+    res.json({
+      success: true,
+      data: history || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get refund history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy lịch sử hoàn tiền'
+    });
+  }
+}
+
+/**
+ * Platform Settings APIs
+ */
+
+/** GET /api/admin/settings */
+async function getPlatformSettings(req, res) {
+  try {
+    const { data: settings, error } = await supabaseAdmin
+      .from('platform_settings')
+      .select('key, value, description, updated_at');
+
+    if (error) throw error;
+
+    // Convert array to object for easier frontend use
+    const settingsObj = {};
+    settings?.forEach(setting => {
+      settingsObj[setting.key] = setting.value;
+    });
+
+    res.json({
+      success: true,
+      data: settingsObj
+    });
+  } catch (error) {
+    console.error('Get platform settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy cài đặt hệ thống'
+    });
+  }
+}
+
+/** PUT /api/admin/settings */
+async function updatePlatformSettings(req, res) {
+  try {
+    const settings = req.body;
+
+    const updatePromises = Object.entries(settings).map(([key, value]) => {
+      return supabaseAdmin
+        .from('platform_settings')
+        .upsert({
+          key,
+          value,
+          updated_at: new Date().toISOString(),
+          updated_by: req.user.id
+        });
+    });
+
+    await Promise.all(updatePromises);
+
+    res.json({
+      success: true,
+      message: 'Cập nhật cài đặt thành công'
+    });
+  } catch (error) {
+    console.error('Update platform settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi cập nhật cài đặt'
+    });
+  }
+}
+
+/** GET /api/admin/providers/:id/documents */
+async function getProviderDocuments(req, res) {
+  try {
+    const { id } = req.params;
+
+    const { data: documents, error } = await supabaseAdmin
+      .from('provider_documents')
+      .select(`
+        id,
+        document_type,
+        document_url,
+        document_number,
+        issue_date,
+        expiry_date,
+        is_verified,
+        notes,
+        created_at,
+        verified_by_profile:profiles!provider_documents_verified_by_fkey(
+          full_name
+        )
+      `)
+      .eq('provider_id', id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: documents || []
+    });
+  } catch (error) {
+    console.error('Get provider documents error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy giấy tờ nhà cung cấp'
+    });
+  }
+}
+
+/** GET /api/admin/dashboard/latest-orders */
+async function getLatestOrders(req, res) {
+  try {
+    const { page = 1, pageSize = 10 } = req.query;
+    const offset = (page - 1) * pageSize;
+
+    const { data: orders, error, count } = await supabaseAdmin
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        status,
+        total_price,
+        pickup_city,
+        delivery_city,
+        created_at,
+        customer:profiles!orders_customer_id_fkey(
+          id,
+          full_name,
+          avatar_url
+        ),
+        provider:provider_profiles!orders_provider_id_fkey(
+          business_name,
+          profiles!provider_profiles_id_fkey(
+            id,
+            full_name,
+            avatar_url
+          )
+        )
+      `, { count: 'exact' })
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: orders || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get latest orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy đơn hàng mới nhất'
+    });
+  }
+}
+
+/** GET /api/admin/dashboard/order-status-distribution */
+async function getOrderStatusDistribution(req, res) {
+  try {
+    const { data: orders } = await supabaseAdmin
+      .from('orders')
+      .select('status');
+
+    const statusCounts = {};
+    orders?.forEach(order => {
+      statusCounts[order.status] = (statusCounts[order.status] || 0) + 1;
+    });
+
+    const distribution = Object.entries(statusCounts).map(([status, count]) => ({
+      status,
+      count,
+      percentage: orders?.length ? (count / orders.length * 100).toFixed(1) : 0
+    }));
+
+    res.json({
+      success: true,
+      data: distribution
+    });
+  } catch (error) {
+    console.error('Get order status distribution error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy phân bố trạng thái đơn hàng'
+    });
+  }
+}
+
+/**
+ * Provider Earnings & Withdrawals APIs
+ */
+
+/** GET /api/admin/provider-earnings */
+async function getProviderEarnings(req, res) {
+  try {
+    const { 
+      status = 'all', 
+      page = 1, 
+      pageSize = 20 
+    } = req.query;
+    
+    const offset = (page - 1) * pageSize;
+
+    let query = supabaseAdmin
+      .from('provider_earnings')
+      .select(`
+        id,
+        order_amount,
+        platform_commission,
+        net_earnings,
+        commission_rate,
+        status,
+        created_at,
+        withdrawn_at,
+        provider:provider_profiles!provider_earnings_provider_id_fkey(
+          business_name,
+          profiles!provider_profiles_id_fkey(
+            full_name,
+            email
+          )
+        ),
+        order:orders!provider_earnings_order_id_fkey(
+          order_number
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('created_at', { ascending: false });
+
+    if (status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    const { data: earnings, error } = await query;
+    if (error) throw error;
+
+    // Get total count
+    let countQuery = supabaseAdmin.from('provider_earnings').select('*', { count: 'exact', head: true });
+    if (status !== 'all') countQuery = countQuery.eq('status', status);
+    
+    const { count } = await countQuery;
+
+    res.json({
+      success: true,
+      data: earnings || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get provider earnings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy thu nhập nhà cung cấp'
+    });
+  }
+}
+
+/** GET /api/admin/withdrawals */
+async function getWithdrawals(req, res) {
+  try {
+    const { 
+      status = 'all', 
+      page = 1, 
+      pageSize = 20 
+    } = req.query;
+    
+    const offset = (page - 1) * pageSize;
+
+    let query = supabaseAdmin
+      .from('provider_withdrawals')
+      .select(`
+        id,
+        amount,
+        bank_name,
+        bank_account_number,
+        bank_account_name,
+        status,
+        requested_at,
+        processed_at,
+        rejection_reason,
+        provider:provider_profiles!provider_withdrawals_provider_id_fkey(
+          business_name,
+          profiles!provider_profiles_id_fkey(
+            full_name,
+            email,
+            phone
+          )
+        ),
+        processed_by_profile:profiles!provider_withdrawals_processed_by_fkey(
+          full_name
+        )
+      `)
+      .range(offset, offset + pageSize - 1)
+      .order('requested_at', { ascending: false });
+
+    if (status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    const { data: withdrawals, error } = await query;
+    if (error) throw error;
+
+    // Get total count
+    let countQuery = supabaseAdmin.from('provider_withdrawals').select('*', { count: 'exact', head: true });
+    if (status !== 'all') countQuery = countQuery.eq('status', status);
+    
+    const { count } = await countQuery;
+
+    res.json({
+      success: true,
+      data: withdrawals || [],
+      meta: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('Get withdrawals error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách rút tiền'
+    });
+  }
+}
+
+/** PUT /api/admin/withdrawals/:id/approve */
+async function approveWithdrawal(req, res) {
+  try {
+    const { id } = req.params;
+    const { transaction_reference } = req.body;
+
+    const { data: withdrawal, error } = await supabaseAdmin
+      .from('provider_withdrawals')
+      .update({
+        status: 'completed',
+        processed_at: new Date().toISOString(),
+        processed_by: req.user.id,
+        transaction_reference
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        provider:provider_profiles!provider_withdrawals_provider_id_fkey(
+          profiles!provider_profiles_id_fkey(full_name, email)
+        )
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Notify provider
+    await supabaseAdmin.from('notifications').insert({
+      user_id: withdrawal.provider_id,
+      notification_type: 'withdrawal_approved',
+      title: 'Yêu cầu rút tiền đã được duyệt',
+      body: `Yêu cầu rút tiền ${withdrawal.amount.toLocaleString()}đ đã được xử lý thành công`,
+      priority: 'normal'
+    });
+
+    res.json({
+      success: true,
+      message: 'Duyệt rút tiền thành công',
+      data: withdrawal
+    });
+  } catch (error) {
+    console.error('Approve withdrawal error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi duyệt rút tiền'
+    });
+  }
+}
+
+/** PUT /api/admin/withdrawals/:id/reject */
+async function rejectWithdrawal(req, res) {
+  try {
+    const { id } = req.params;
+    const { rejection_reason } = req.body;
+
+    if (!rejection_reason) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lý do từ chối là bắt buộc'
+      });
+    }
+
+    const { data: withdrawal, error } = await supabaseAdmin
+      .from('provider_withdrawals')
+      .update({
+        status: 'rejected',
+        processed_at: new Date().toISOString(),
+        processed_by: req.user.id,
+        rejection_reason
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        provider:provider_profiles!provider_withdrawals_provider_id_fkey(
+          profiles!provider_profiles_id_fkey(full_name, email)
+        )
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Notify provider
+    await supabaseAdmin.from('notifications').insert({
+      user_id: withdrawal.provider_id,
+      notification_type: 'withdrawal_rejected',
+      title: 'Yêu cầu rút tiền bị từ chối',
+      body: `Yêu cầu rút tiền ${withdrawal.amount.toLocaleString()}đ bị từ chối. Lý do: ${rejection_reason}`,
+      priority: 'high'
+    });
+
+    res.json({
+      success: true,
+      message: 'Từ chối rút tiền thành công',
+      data: withdrawal
+    });
+  } catch (error) {
+    console.error('Reject withdrawal error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi từ chối rút tiền'
+    });
+  }
+}
+
 module.exports = {
   login,
   getProfile,
+  updateProfile,
+  uploadAvatar,
   getDashboard,
   getDashboardStats,
   getPendingProviders,
+  getProviderDocuments,
   verifyProvider,
   getDisputes,
   getDisputeDetails,
   resolveDispute,
+  // Dashboard extras
+  getLatestOrders,
+  getOrderStatusDistribution,
+  // Users Management
+  getUsers,
+  updateUserStatus,
+  // Orders Management  
+  getOrders,
+  getOrderById,
+  forceCancelOrder,
+  // Reviews Management
+  getReviews,
+  hideReview,
+  unhideReview,
+  flagReview,
+  // Refunds Management
+  getRefunds,
+  approveRefund,
+  // Provider Earnings & Withdrawals
+  getProviderEarnings,
+  getWithdrawals,
+  approveWithdrawal,
+  rejectWithdrawal,
+  // Analytics
+  getGMVStats,
+  getOrderStatistics,
+  getTopProviders,
+  getPlatformCommissionByMonth,
+  getRevenueByMonth,
+  // Notifications/Announcements
+  getAnnouncements,
+  createAnnouncement,
+  publishAnnouncement,
+  // Activity Logs
+  getOrderStatusHistory,
+  getVerificationHistory,
+  getRefundHistory,
+  // Platform Settings
+  getPlatformSettings,
+  updatePlatformSettings,
 };

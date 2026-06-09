@@ -26,7 +26,7 @@ type OrderRow = LatestOrderResult["data"][number];
 function TableRowSkeleton() {
   return (
     <tr>
-      {Array.from({ length: 7 }).map((_, i) => (
+      {Array.from({ length: 8 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
           <Skeleton className="h-4 w-full" />
         </td>
@@ -67,6 +67,7 @@ export function OrdersTableClient({ initialData }: OrdersTableClientProps) {
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border)" }}>
               {[
+                "STT",
                 "#Mã đơn",
                 "Khách hàng",
                 "Nhà vận chuyển",
@@ -92,7 +93,7 @@ export function OrdersTableClient({ initialData }: OrdersTableClientProps) {
                 ))
               : rows.length === 0
               ? null
-              : rows.map((order) => {
+              : rows.map((order, idx) => {
                   // Supabase may return joined rows as an array (one-to-many FK alias)
                   // or as a single object — normalise both shapes safely.
                   type JoinedProfile = {
@@ -111,16 +112,19 @@ export function OrdersTableClient({ initialData }: OrdersTableClientProps) {
                   }
 
                   const customer = normaliseJoin(order.customer);
-                  const provider = normaliseJoin(order.provider);
+                  const providerRaw = normaliseJoin(order.provider);
+                  const providerProfile = providerRaw?.profiles
+                    ? normaliseJoin(providerRaw.profiles)
+                    : providerRaw;
 
                   const customerName = customer?.full_name ?? "—";
                   const customerAvatar = customer?.avatar_url ?? null;
 
                   const providerName =
-                    provider
-                      ? (provider.business_name ?? provider.full_name)
+                    providerRaw
+                      ? (providerRaw.business_name ?? providerProfile?.full_name ?? "—")
                       : "—";
-                  const providerAvatar = provider?.avatar_url ?? null;
+                  const providerAvatar = providerProfile?.avatar_url ?? null;
 
                   return (
                     <tr
@@ -137,6 +141,14 @@ export function OrdersTableClient({ initialData }: OrdersTableClientProps) {
                           "transparent";
                       }}
                     >
+                      {/* STT */}
+                      <td
+                        className="px-4 py-3 text-center text-xs font-medium w-12"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        {(data.meta.page - 1) * data.meta.pageSize + idx + 1}
+                      </td>
+
                       {/* Mã đơn */}
                       <td
                         className="px-4 py-3 font-medium whitespace-nowrap"
@@ -156,7 +168,7 @@ export function OrdersTableClient({ initialData }: OrdersTableClientProps) {
                               />
                             )}
                             <AvatarFallback>
-                              {customerName.charAt(0).toUpperCase()}
+                              {customerName && customerName !== "—" ? customerName.charAt(0).toUpperCase() : "?"}
                             </AvatarFallback>
                           </Avatar>
                           <span
@@ -181,7 +193,7 @@ export function OrdersTableClient({ initialData }: OrdersTableClientProps) {
                                 />
                               )}
                               <AvatarFallback>
-                                {String(providerName).charAt(0).toUpperCase()}
+                                {String(providerName) && String(providerName) !== "—" ? String(providerName).charAt(0).toUpperCase() : "?"}
                               </AvatarFallback>
                             </Avatar>
                             <span
@@ -244,7 +256,7 @@ export function OrdersTableClient({ initialData }: OrdersTableClientProps) {
       )}
 
       {/* Pagination */}
-      {data.meta.totalPages > 1 && (
+      {!isPending && data.meta.total > 0 && (
         <div style={{ borderTop: "1px solid var(--border)" }}>
           <Pagination
             page={data.meta.page}

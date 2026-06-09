@@ -15,6 +15,16 @@ async function browse(req, res, next) {
   }
 }
 
+async function getById(req, res, next) {
+  try {
+    const reviewsLimit = req.query.reviews_limit ? parseInt(req.query.reviews_limit, 10) : 5;
+    const data = await providersService.getProviderById(req.params.id, { reviewsLimit });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 // ── Provider self-service ─────────────────────────────────────────────────────
 
 async function getMe(req, res, next) {
@@ -80,4 +90,4 @@ async function getDocuments(req, res, next) {
   }
 }
 
-module.exports = { browse, getMe, updateMe, setStatus, uploadDocument, getDocuments };
+module.exports = { browse, getById, getMe, updateMe, setStatus, uploadDocument, getDocuments };

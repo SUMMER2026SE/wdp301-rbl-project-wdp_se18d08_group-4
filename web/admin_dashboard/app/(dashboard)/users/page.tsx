@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 
 import { useState, useTransition, useCallback, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   MoreVertical,
@@ -135,7 +136,7 @@ function UsersTable({ tab, search, statusFilter }: UsersTableProps) {
         search: search.trim() || undefined,
         status: statusFilter === "all" ? undefined : statusFilter,
         page: p,
-        pageSize: 15,
+        pageSize: 10,
       });
       setResult(res);
       setLoading(false);
@@ -174,11 +175,11 @@ function UsersTable({ tab, search, statusFilter }: UsersTableProps) {
 
   // Column headers per tab
   const customerCols = [
-    "Tên", "Email", "Số điện thoại", "Trường học",
+    "STT", "Tên", "Email", "Số điện thoại", "Trường học",
     "Tổng đơn", "Tổng chi tiêu", "Trạng thái", "Ngày tham gia", "",
   ];
   const providerCols = [
-    "Tên", "Tên doanh nghiệp", "Email", "Xe",
+    "STT", "Tên", "Tên doanh nghiệp", "Email", "Xe",
     "Đánh giá", "Tổng đơn", "Thu nhập", "Xác minh", "Trạng thái", "",
   ];
   const cols = isCustomers ? customerCols : providerCols;
@@ -208,10 +209,11 @@ function UsersTable({ tab, search, statusFilter }: UsersTableProps) {
               ? Array.from({ length: 5 }).map((_, i) => (
                   <TableRowSkeleton key={i} cols={cols.length} />
                 ))
-              : rows.map((user) => (
+              : rows.map((user, idx) => (
                   <UserRow
                     key={user.id}
                     user={user}
+                    stt={(page - 1) * (meta?.pageSize ?? 10) + idx + 1}
                     isCustomers={isCustomers}
                     onStatusChanged={refreshData}
                   />
@@ -232,7 +234,7 @@ function UsersTable({ tab, search, statusFilter }: UsersTableProps) {
         />
       )}
 
-      {meta && meta.totalPages > 1 && (
+      {meta && meta.total > 0 && (
         <div style={{ borderTop: "1px solid var(--border)" }}>
           <Pagination
             page={meta.page}
@@ -253,11 +255,12 @@ function UsersTable({ tab, search, statusFilter }: UsersTableProps) {
 
 interface UserRowProps {
   user: UserRow;
+  stt: number;
   isCustomers: boolean;
   onStatusChanged: () => void;
 }
 
-function UserRow({ user, isCustomers, onStatusChanged }: UserRowProps) {
+function UserRow({ user, stt, isCustomers, onStatusChanged }: UserRowProps) {
   return (
     <tr
       style={{ borderBottom: "1px solid var(--border)" }}
@@ -271,6 +274,12 @@ function UserRow({ user, isCustomers, onStatusChanged }: UserRowProps) {
           "transparent";
       }}
     >
+      <td
+        className="px-4 py-3 text-center text-xs font-medium w-12"
+        style={{ color: "var(--muted)" }}
+      >
+        {stt}
+      </td>
       {/* Avatar + Name */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -279,7 +288,7 @@ function UserRow({ user, isCustomers, onStatusChanged }: UserRowProps) {
               <AvatarImage src={user.avatar_url} alt={user.full_name} />
             )}
             <AvatarFallback>
-              {user.full_name.charAt(0).toUpperCase()}
+              {user.full_name ? user.full_name.charAt(0).toUpperCase() : "?"}
             </AvatarFallback>
           </Avatar>
           <span
@@ -399,11 +408,25 @@ function UserRow({ user, isCustomers, onStatusChanged }: UserRowProps) {
 ───────────────────────────────────────────────────────────────────────────── */
 
 export default function UsersPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("customers");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const initialTab: Tab = tabParam === "providers" ? "providers" : "customers";
+
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Đồng bộ tab khi URL thay đổi (vd: bấm sidebar "Nhà vận chuyển")
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "providers" || tab === "customers") {
+      setActiveTab(tab);
+      setStatusFilter("all");
+    }
+  }, [searchParams]);
 
   function handleSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value;
@@ -434,9 +457,10 @@ export default function UsersPage() {
       <Tabs
         value={activeTab}
         onValueChange={(v) => {
-          setActiveTab(v as Tab);
-          // Reset status filter on tab switch to avoid stale state confusion
+          const tab = v as Tab;
+          setActiveTab(tab);
           setStatusFilter("all");
+          router.push(`/users?tab=${tab}`, { scroll: false });
         }}
       >
         {/* Tabs + filter bar */}

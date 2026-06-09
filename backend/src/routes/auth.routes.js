@@ -24,6 +24,7 @@ router.post('/reset-password', authController.resetPassword);
 router.post('/google', authController.googleAuth);
 
 router.get('/me', requireNodeAuth, authController.me);
+router.patch('/me', requireNodeAuth, authController.updateProfile);
 router.post('/change-password', requireNodeAuth, authController.changePassword);
 
 module.exports = router;

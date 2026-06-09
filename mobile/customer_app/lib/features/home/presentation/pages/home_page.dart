@@ -7,6 +7,8 @@ import '../../../orders/data/customer_orders_repository.dart';
 import '../../../orders/domain/order_models.dart';
 import '../../../../core/auth/auth_token_storage.dart';
 import '../../../auth/data/customer_auth_repository.dart';
+import '../../../notifications/data/notifications_repository.dart';
+import '../../../notifications/presentation/pages/messages_tab_page.dart';
 import '../../../booking/presentation/cubit/booking_flow_cubit.dart';
 import '../../../chat/domain/active_chat_context.dart';
 import '../../../../core/mock/mock_auth_session.dart';
@@ -25,11 +27,19 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String _userName = '';
+  int _unreadCount = 0;
+  final _notifRepo = NotificationsRepository();
 
   @override
   void initState() {
     super.initState();
     _loadProfileName();
+    _loadUnreadCount();
+  }
+
+  Future<void> _loadUnreadCount() async {
+    final count = await _notifRepo.unreadCount();
+    if (mounted) setState(() => _unreadCount = count);
   }
 
   static String _greetingFirstName(String fullName) {
@@ -135,12 +145,56 @@ class _HomePageState extends State<HomePage> {
             Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: () {},
+                onTap: () async {
+                  await Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(
+                      builder: (_) => Scaffold(
+                        backgroundColor: c.background,
+                        appBar: AppBar(
+                          backgroundColor: c.background,
+                          elevation: 0,
+                          scrolledUnderElevation: 0,
+                          surfaceTintColor: Colors.transparent,
+                          iconTheme: IconThemeData(color: c.onSurface),
+                          title: Text('Thông báo',
+                              style: TextStyle(color: c.onSurface, fontWeight: FontWeight.w700)),
+                        ),
+                        body: const MessagesTabPage(showTitle: false),
+                      ),
+                    ),
+                  );
+                  _loadUnreadCount();
+                },
                 customBorder: const CircleBorder(),
                 child: SizedBox(
                   width: 40,
                   height: 40,
-                  child: Icon(Icons.notifications_outlined, color: c.primary),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Center(child: Icon(Icons.notifications_outlined, color: c.primary)),
+                      if (_unreadCount > 0)
+                        Positioned(
+                          right: 4,
+                          top: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppColors.error,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              _unreadCount > 99 ? '99+' : '$_unreadCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -167,7 +221,7 @@ class _HomePageState extends State<HomePage> {
               FadeSlideIn(
                 delay: const Duration(milliseconds: 140),
                 child: Text(
-                  'So sánh báo giá nhà xe · Đặt cọc an toàn qua UniMove',
+                  'Chuyển trọ thông minh · Mô tả trọ, nhận báo giá minh bạch',
                   style: TextStyle(fontSize: 16, color: c.onSurfaceMuted),
                 ),
               ),
@@ -192,8 +246,8 @@ class _HomePageState extends State<HomePage> {
                 child: _MainServiceCard(
                   colors: c,
                   onTap: () {
-                    context.read<BookingFlowCubit>().startCompareQuotesFlow();
-                    context.push('/booking/packages');
+                    context.read<BookingFlowCubit>().startFullMoveBooking();
+                    context.push('/booking/location');
                   },
                 ),
               ),
@@ -219,8 +273,8 @@ class _HomePageState extends State<HomePage> {
                           colors: c,
                           icon: Icons.route_outlined,
                           useSecondaryIconBg: true,
-                          title: 'Đặt chuyến',
-                          subtitle: 'Chọn điểm đón & đến',
+                          title: 'Gửi yêu cầu',
+                          subtitle: 'Trọ cũ → trọ mới',
                           onTap: () {
                             context.read<BookingFlowCubit>().startFullMoveBooking();
                             context.push('/booking/location');
@@ -252,10 +306,10 @@ class _HomePageState extends State<HomePage> {
                       Expanded(
                         child: _SmallServiceCard(
                           colors: c,
-                          icon: Icons.recycling_outlined,
-                          useSecondaryIconBg: true,
-                          title: 'Pass đồ cũ',
-                          subtitle: 'Đăng tin · đối tác đến lấy',
+                          icon: Icons.storefront,
+                          useSecondaryIconBg: false,
+                          title: 'Chợ sinh viên',
+                          subtitle: 'Mua bán đồ · sinh viên tin nhau',
                           onTap: () => context.push('/pass-items'),
                         ),
                       ),
@@ -263,14 +317,11 @@ class _HomePageState extends State<HomePage> {
                       Expanded(
                         child: _SmallServiceCard(
                           colors: c,
-                          icon: Icons.local_shipping_outlined,
+                          icon: Icons.receipt_long_outlined,
                           useSecondaryIconBg: false,
-                          title: 'So sánh nhà xe',
-                          subtitle: 'Xem giá & đánh giá',
-                          onTap: () {
-                            context.read<BookingFlowCubit>().startCompareQuotesFlow();
-                            context.push('/booking/partners');
-                          },
+                          title: 'Bảng phụ phí',
+                          subtitle: 'Tham khảo minh bạch',
+                          onTap: () => context.push('/booking/reference-prices'),
                         ),
                       ),
                     ],
@@ -317,7 +368,7 @@ class _SearchBar extends StatelessWidget {
       },
       child: AbsorbPointer(
         child: ShadInput(
-          placeholder: const Text('Bạn muốn chuyển đến đâu?'),
+          placeholder: const Text('Trọ mới của bạn ở đâu?'),
           leading: Icon(LucideIcons.search, size: 18, color: colors.primary),
         ),
       ),
@@ -367,7 +418,7 @@ class _MainServiceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Marketplace · Đã xác minh',
+                    'Chuyển trọ thông minh',
                     style: TextStyle(
                       color: isDark ? colors.onPrimaryContainer : colors.primary,
                       fontSize: 12,
@@ -376,7 +427,7 @@ class _MainServiceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Combo chuyển trọ',
+                    'Gửi yêu cầu báo giá',
                     style: TextStyle(
                       color: isDark ? AppColors.onPrimary : colors.onSurface,
                       fontSize: 20,
@@ -386,7 +437,7 @@ class _MainServiceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Xe + khuân vác gộp · Thêm người giá ưu đãi',
+                    'Mô tả trọ → nhà xe báo giá, so sánh & chốt trên app',
                     style: TextStyle(
                       color: isDark ? colors.onPrimaryContainer : colors.onSurfaceMuted,
                       fontSize: 14,
@@ -547,7 +598,7 @@ class _FlashSaleBanner extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'Nhà xe báo giá — bạn chọn',
+                          'Phụ phí minh bạch',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -559,7 +610,7 @@ class _FlashSaleBanner extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'UniMove giữ cọc · Cọc an toàn, hoàn tiền rõ',
+                          'Hẻm hẹp · tầng · đồ thêm — báo trước khi chốt',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.25),
@@ -569,15 +620,12 @@ class _FlashSaleBanner extends StatelessWidget {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(99),
                           child: InkWell(
-                            onTap: () {
-                              context.read<BookingFlowCubit>().startCompareQuotesFlow();
-                              context.push('/booking/packages');
-                            },
+                            onTap: () => context.push('/booking/reference-prices'),
                             borderRadius: BorderRadius.circular(99),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                               child: Text(
-                                'Nhận báo giá',
+                                'Xem bảng phụ phí',
                                 style: TextStyle(
                                   color: colors.primary,
                                   fontWeight: FontWeight.w600,

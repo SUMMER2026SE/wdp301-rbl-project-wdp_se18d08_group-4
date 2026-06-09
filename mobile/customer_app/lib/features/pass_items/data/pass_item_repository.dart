@@ -1,251 +1,164 @@
+import '../../../core/auth/auth_token_storage.dart';
+import '../../../core/network/api_client.dart';
 import '../domain/pass_extras.dart';
 import '../domain/pass_item.dart';
 import '../domain/pass_item_provinces.dart';
 
 class PassItemRepository {
-  /// Người mua đang đăng nhập (mock).
-  static const currentBuyerId = 'buyer_me';
+  final ApiClient _api = ApiClient.instance;
+  final List<PassItemPost> _cache = [];
 
-  static final PassInterestedBuyer currentBuyer = PassInterestedBuyer(
-    id: currentBuyerId,
-    name: 'Nguyễn Văn An',
-    contact: '0918 333 444',
-    area: 'KTX Khu A, ĐHQG',
-    interestedAt: DateTime(2026, 6, 3, 10, 0),
-    note: 'Tôi muốn nhận món này',
-  );
+  // ── Mapping helpers ───────────────────────────────────────────────────────
 
-  static final Map<String, List<PassInterestedBuyer>> _interestedByPost = {
-    'pi_006': [
-      PassInterestedBuyer(
-        id: 'b_khoa',
-        name: 'Trần Minh Khoa',
-        contact: '0903 111 222',
-        area: 'KTX Khu B, Thủ Đức',
-        interestedAt: DateTime(2026, 6, 3, 8, 20),
-        note: 'Hỏi giá cuối',
-        lastMessage: 'Giá 100k được không bạn?',
-        unreadForSeller: 2,
-      ),
-      PassInterestedBuyer(
-        id: 'b_lan',
-        name: 'Phạm Thảo Lan',
-        contact: '0935 888 999',
-        area: 'Phường 14, Quận 5',
-        interestedAt: DateTime(2026, 6, 3, 7, 45),
-        lastMessage: 'Còn quạt không ạ?',
-        unreadForSeller: 1,
-      ),
-      PassInterestedBuyer(
-        id: 'b_hung',
-        name: 'Hoàng Đức Hưng',
-        contact: '0977 222 333',
-        area: 'Chợ Lớn, Quận 6',
-        interestedAt: DateTime(2026, 6, 2, 19, 10),
-        lastMessage: 'Mình lấy tối nay được không?',
-        unreadForSeller: 0,
-      ),
-    ],
+  static const _categoryToApi = <String, String>{
+    'Nội thất': 'furniture',
+    'Điện tử': 'electronics',
+    'Gia dụng': 'appliances',
+    'Sách & VPP': 'books',
+    'Quần áo': 'clothes',
+    'Khác': 'other',
   };
 
-  static const _img = {
-    'wardrobe': 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=800&q=80',
-    'desk': 'https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=800&q=80',
-    'fridge': 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?w=800&q=80',
-    'books': 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=800&q=80',
-    'bike': 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=800&q=80',
-    'fan': 'https://images.unsplash.com/photo-1565374790502-39a21a8f3a36?w=800&q=80',
+  static const _categoryFromApi = <String, String>{
+    'furniture': 'Nội thất',
+    'electronics': 'Điện tử',
+    'appliances': 'Gia dụng',
+    'books': 'Sách & VPP',
+    'clothes': 'Quần áo',
+    'other': 'Khác',
   };
 
-  static final List<PassItemPost> _posts = [
-    PassItemPost(
-      id: 'pi_001',
-      title: 'Tủ quần áo gỗ 2 cánh',
-      description:
-          'Tủ gỗ công nghiệp còn chắc chắn, không mối mọt. Có ngăn treo và ngăn kéo. Cần pass gấp do chuyển trọ.',
-      category: 'Nội thất',
-      condition: PassItemCondition.good,
-      area: 'KTX Khu B, TP. Thủ Đức',
-      provinceId: 'hcm',
-      price: 280000,
-      imageUrl: _img['wardrobe']!,
-      usageDuration: '1 năm',
-      posterName: 'Minh Anh',
-      posterContact: '0987 6xx xxx',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      isNegotiable: true,
-      interestedCount: 5,
-    ),
-    PassItemPost(
-      id: 'pi_002',
-      title: 'Bàn học + ghế lưới',
-      description: 'Bàn gấp gọn, ghế lưới êm. Phù hợp phòng trọ nhỏ, ngồi học/làm việc thoải mái.',
-      category: 'Nội thất',
-      condition: PassItemCondition.likeNew,
-      area: 'Linh Trung, TP. Thủ Đức',
-      provinceId: 'hcm',
-      price: 150000,
-      imageUrl: _img['desk']!,
-      usageDuration: '6 tháng',
-      posterName: 'Quốc Huy',
-      posterContact: '0901 1xx xxx',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now().subtract(const Duration(hours: 8)),
-      interestedCount: 2,
-    ),
-    PassItemPost(
-      id: 'pi_003',
-      title: 'Tủ lạnh mini 90L',
-      description: 'Tủ lạnh mini chạy êm, làm lạnh tốt. Phù hợp phòng trọ, để nước & đồ ăn nhẹ.',
-      category: 'Điện tử',
-      condition: PassItemCondition.good,
-      area: 'Quận 10, TP.HCM',
-      provinceId: 'hcm',
-      price: 750000,
-      imageUrl: _img['fridge']!,
-      usageDuration: '2 năm',
-      posterName: 'Thu Hà',
-      posterContact: '0909 1xx xxx',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      isNegotiable: true,
-      interestedCount: 9,
-    ),
-    PassItemPost(
-      id: 'pi_004',
-      title: 'Combo sách giáo trình năm 1',
-      description: 'Trọn bộ giáo trình đại cương, còn mới, ít ghi chú. Tặng kèm vài cuốn tham khảo.',
-      category: 'Sách & VPP',
-      condition: PassItemCondition.good,
-      area: 'Làng đại học, Dĩ An, Bình Dương',
-      provinceId: 'bd',
-      price: 0,
-      imageUrl: _img['books']!,
-      usageDuration: '1 học kỳ',
-      posterName: 'Bảo Trân',
-      posterContact: '0938 2xx xxx',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      interestedCount: 14,
-    ),
-    PassItemPost(
-      id: 'pi_005',
-      title: 'Xe đạp đi học',
-      description: 'Xe đạp khung nhôm nhẹ, phanh tốt, mới thay lốp. Đi học trong làng đại học rất tiện.',
-      category: 'Khác',
-      condition: PassItemCondition.fair,
-      area: 'KTX Khu A, ĐHQG, TP. Hồ Chí Minh',
-      provinceId: 'hcm',
-      price: 420000,
-      imageUrl: _img['bike']!,
-      usageDuration: '1.5 năm',
-      posterName: 'Đức Anh',
-      posterContact: '0912 2xx xxx',
-      status: PassItemStatus.reserved,
-      createdAt: DateTime.now().subtract(const Duration(days: 3)),
-      isNegotiable: true,
-      interestedCount: 7,
-    ),
-    PassItemPost(
-      id: 'pi_006',
-      title: 'Quạt cây Senko',
-      description: 'Quạt cây 3 mức gió, còn chạy tốt, nhựa không nứt vỡ. Pass lại vì hết nhu cầu.',
-      category: 'Gia dụng',
-      condition: PassItemCondition.good,
-      area: 'Phường 14, Quận 5, TP. Hồ Chí Minh',
-      provinceId: 'hcm',
-      price: 120000,
-      imageUrl: _img['fan']!,
-      usageDuration: '1 năm',
-      posterName: 'Lê Nhật Nam',
-      posterContact: '0987 654 321',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-      isMine: true,
-      interestedCount: 3,
-    ),
-    PassItemPost(
-      id: 'pi_007',
-      title: 'Bàn ghế phòng trọ',
-      description: 'Bàn gỗ + ghế nhựa, pass vì tốt nghiệp. Lấy tại khu KTX.',
-      category: 'Nội thất',
-      condition: PassItemCondition.good,
-      area: 'KTX ĐH Bách Khoa, Hà Nội',
-      provinceId: 'hn',
-      price: 200000,
-      imageUrl: _img['desk']!,
-      usageDuration: '8 tháng',
-      posterName: 'Văn Hùng',
-      posterContact: '0912 3xx xxx',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now().subtract(const Duration(hours: 12)),
-      interestedCount: 4,
-    ),
-    PassItemPost(
-      id: 'pi_008',
-      title: 'Loa Bluetooth mini',
-      description: 'Loa nhỏ gọn, pin còn tốt, nghe nhạc trong phòng trọ.',
-      category: 'Điện tử',
-      condition: PassItemCondition.likeNew,
-      area: 'Khuê Mỹ, Đà Nẵng',
-      provinceId: 'dn',
-      price: 180000,
-      imageUrl: _img['fridge']!,
-      usageDuration: '4 tháng',
-      posterName: 'Minh Tú',
-      posterContact: '0905 4xx xxx',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now().subtract(const Duration(days: 1, hours: 3)),
-      isNegotiable: true,
-      interestedCount: 2,
-    ),
-  ];
+  static PassItemCondition _conditionFromApi(String c) => switch (c) {
+        'new' || 'like_new' => PassItemCondition.likeNew,
+        'good' => PassItemCondition.good,
+        _ => PassItemCondition.fair,
+      };
 
-  Future<List<PassItemPost>> browse({
-    String? keyword,
-    String? category,
-    String? provinceId,
-  }) async {
-    await Future<void>.delayed(const Duration(milliseconds: 180));
-    Iterable<PassItemPost> list = _posts.where((e) => e.status != PassItemStatus.hidden);
+  static String _conditionToApi(PassItemCondition c) => switch (c) {
+        PassItemCondition.likeNew => 'like_new',
+        PassItemCondition.good => 'good',
+        PassItemCondition.fair => 'fair',
+      };
+
+  static PassItemStatus _statusFromApi(String s) => switch (s) {
+        'active' => PassItemStatus.open,
+        'reserved' => PassItemStatus.reserved,
+        'hidden' => PassItemStatus.hidden,
+        _ => PassItemStatus.completed,
+      };
+
+  static String _statusToApi(PassItemStatus s) => switch (s) {
+        PassItemStatus.open => 'active',
+        PassItemStatus.reserved => 'reserved',
+        PassItemStatus.hidden => 'hidden',
+        PassItemStatus.completed => 'closed',
+      };
+
+  static PassItemPost _fromJson(Map<String, dynamic> j, {String? myId}) {
+    final owner = (j['profiles'] as Map?)?.cast<String, dynamic>() ?? {};
+    final images = (j['images'] as List?)?.cast<String>() ?? [];
+    final rawCat = j['category'] as String? ?? 'other';
+    return PassItemPost(
+      id: j['id'] as String,
+      title: j['title'] as String,
+      description: j['description'] as String? ?? '',
+      category: _categoryFromApi[rawCat] ?? rawCat,
+      condition: _conditionFromApi(j['condition'] as String? ?? 'good'),
+      area: j['area'] as String? ?? '',
+      provinceId: PassItemProvince.detectId(j['area'] as String? ?? ''),
+      price: (j['price'] as num?)?.toInt() ?? 0,
+      imageUrl: images.isNotEmpty ? images.first : '',
+      images: images,
+      usageDuration: j['usage_duration'] as String? ?? '',
+      posterName: owner['full_name'] as String? ?? '',
+      posterContact: owner['phone'] as String? ?? '',
+      posterId: owner['id'] as String? ?? '',
+      posterAvatarUrl: owner['avatar_url'] as String?,
+      status: _statusFromApi(j['status'] as String? ?? 'active'),
+      createdAt: DateTime.parse(j['created_at'] as String),
+      isMine: myId != null && (j['is_mine'] as bool? ?? owner['id'] == myId),
+      interestedCount: (j['interest_count'] as num?)?.toInt() ?? 0,
+      dealConfirmed: j['deal_confirmed'] as bool? ?? false,
+      confirmedPrice: (j['confirmed_price'] as num?)?.toInt(),
+      buyerTransportBooked: j['transport_booked'] as bool? ?? false,
+      isRated: j['is_rated'] as bool? ?? false,
+      isInterested: j['is_interested'] as bool? ?? false,
+    );
+  }
+
+  Future<String?> _myId() async {
+    final user = await AuthTokenStorage.instance.loadUser();
+    return user?['id'] as String?;
+  }
+
+  Future<String?> currentUserId() => _myId();
+
+  void _updateCache(List<PassItemPost> posts) {
+    for (final p in posts) {
+      final idx = _cache.indexWhere((c) => c.id == p.id);
+      if (idx == -1) _cache.add(p);
+      else _cache[idx] = p;
+    }
+  }
+
+  // ── API-059: Khám phá tin ─────────────────────────────────────────────────
+
+  Future<List<PassItemPost>> browse({String? keyword, String? category, String? provinceId}) async {
+    final query = <String, dynamic>{};
+    if (keyword != null && keyword.trim().isNotEmpty) query['keyword'] = keyword.trim();
     if (category != null && category.isNotEmpty && category != 'Tất cả') {
-      list = list.where((e) => e.category == category);
+      final apiCat = _categoryToApi[category];
+      if (apiCat != null) query['category'] = apiCat;
     }
     if (provinceId != null && provinceId.isNotEmpty) {
-      final province = PassItemProvince.resolve(provinceId);
-      list = list.where(province.matchesPost);
+      query['area'] = PassItemProvince.resolve(provinceId).label;
     }
-    if (keyword != null && keyword.trim().isNotEmpty) {
-      final k = keyword.trim().toLowerCase();
-      list = list.where((e) =>
-          e.title.toLowerCase().contains(k) ||
-          e.description.toLowerCase().contains(k) ||
-          e.area.toLowerCase().contains(k));
-    }
-    final result = list.toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return result;
+
+    final myId = await _myId();
+    final envelope = await _api.guard(() => _api.get('/marketplace/listings', queryParameters: query));
+    final raw = (envelope['listings'] as List?) ?? [];
+    final posts = raw.map((e) => _fromJson(Map<String, dynamic>.from(e as Map), myId: myId)).toList();
+    _updateCache(posts);
+    return posts;
   }
+
+  // ── Seller profile: Tin của người bán ───────────────────────────────────
+
+  Future<List<PassItemPost>> browseByOwner(String sellerId) async {
+    final myId = await _myId();
+    final envelope = await _api.guard(
+      () => _api.get('/marketplace/listings', queryParameters: {'seller_id': sellerId}),
+    );
+    final raw = (envelope['listings'] as List?) ?? [];
+    return raw.map((e) => _fromJson(Map<String, dynamic>.from(e as Map), myId: myId)).toList();
+  }
+
+  // ── API-060: Tin của tôi ─────────────────────────────────────────────────
 
   Future<List<PassItemPost>> myPosts() async {
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    return _posts.where((e) => e.isMine).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final myId = await _myId();
+    final envelope = await _api.guard(() => _api.get('/marketplace/my-listings'));
+    final raw = (envelope['listings'] as List?) ?? [];
+    final posts = raw.map((e) => _fromJson(Map<String, dynamic>.from(e as Map), myId: myId)).toList();
+    _updateCache(posts);
+    return posts;
   }
 
+  // ── API-061: Chi tiết tin ────────────────────────────────────────────────
+
   Future<PassItemPost?> byId(String id) async {
+    final myId = await _myId();
     try {
-      return _posts.firstWhere((e) => e.id == id);
+      final envelope = await _api.guard(() => _api.get('/marketplace/listings/$id'));
+      final post = _fromJson(Map<String, dynamic>.from(envelope['data'] as Map), myId: myId);
+      _updateCache([post]);
+      return post;
     } catch (_) {
-      return null;
+      try { return _cache.firstWhere((e) => e.id == id); } catch (_) { return null; }
     }
   }
 
-  /// Tải ảnh lên server (mock: trả path local để hiển thị; API thật: POST /uploads).
-  Future<String> uploadImage({required String filePath}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    return filePath;
-  }
+  // ── API-062: Đăng tin mới ─────────────────────────────────────────────────
 
   Future<PassItemPost> create({
     required String title,
@@ -257,303 +170,236 @@ class PassItemRepository {
     required int price,
     required String usageDuration,
     required bool isNegotiable,
-    required String imageUrl,
+    required List<String> images,
   }) async {
-    await Future<void>.delayed(const Duration(milliseconds: 160));
-    final post = PassItemPost(
-      id: 'pi_${DateTime.now().millisecondsSinceEpoch}',
-      title: title,
-      description: description.isEmpty ? 'Không có mô tả thêm.' : description,
-      category: category,
-      condition: condition,
-      area: area,
-      provinceId: provinceId,
-      price: price,
-      imageUrl: imageUrl,
-      usageDuration: usageDuration.isEmpty ? 'Không rõ' : usageDuration,
-      posterName: 'Lê Nhật Nam',
-      posterContact: '0987 654 321',
-      status: PassItemStatus.open,
-      createdAt: DateTime.now(),
-      isNegotiable: isNegotiable,
-      isMine: true,
-    );
-    _posts.insert(0, post);
+    final myId = await _myId();
+    final envelope = await _api.guard(() => _api.post('/marketplace/listings', body: {
+      'title': title,
+      'description': description.isEmpty ? null : description,
+      'category': _categoryToApi[category] ?? 'other',
+      'condition': _conditionToApi(condition),
+      'area': area.isNotEmpty ? area : PassItemProvince.resolve(provinceId).label,
+      'price': price,
+      'images': images,
+      if (usageDuration.isNotEmpty) 'usage_duration': usageDuration,
+    }));
+    final post = _fromJson(Map<String, dynamic>.from(envelope['data'] as Map), myId: myId);
+    _cache.insert(0, post);
     return post;
   }
 
+  // ── Rating ───────────────────────────────────────────────────────────────
+
+  Future<void> rateTransaction(String listingId, int rating, String? comment) async {
+    await _api.guard(() => _api.post('/marketplace/listings/$listingId/rating', body: {
+      'rating': rating,
+      if (comment != null && comment.isNotEmpty) 'comment': comment,
+    }));
+  }
+
+  Future<void> confirmReceived(String listingId) async {
+    await _api.guard(() => _api.post('/marketplace/listings/$listingId/confirm-received', body: {}));
+  }
+
+  Future<Map<String, dynamic>> sellerStats(String sellerId) async {
+    try {
+      final envelope = await _api.guard(() => _api.get('/marketplace/seller/$sellerId/stats'));
+      return (envelope['data'] as Map?)?.cast<String, dynamic>() ?? {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // ── Bump listing ─────────────────────────────────────────────────────────
+
+  Future<String?> bumpListing(String id) async {
+    try {
+      await _api.guard(() => _api.post('/marketplace/listings/$id/bump', body: {}));
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  // ── API-064: Đổi trạng thái tin ──────────────────────────────────────────
+
   Future<void> updateStatus(String id, PassItemStatus status) async {
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    final idx = _posts.indexWhere((e) => e.id == id);
-    if (idx != -1) _posts[idx] = _posts[idx].copyWith(status: status);
+    await _api.guard(() => _api.patch('/marketplace/listings/$id/status', body: {'status': _statusToApi(status)}));
+    final idx = _cache.indexWhere((e) => e.id == id);
+    if (idx != -1) _cache[idx] = _cache[idx].copyWith(status: status);
   }
 
-  /// Người bán chốt đơn — mở quyền đặt xe cho người mua.
-  Future<bool> confirmDeal(String itemId, {int? agreedPrice}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 140));
-    final idx = _posts.indexWhere((e) => e.id == itemId);
-    if (idx == -1) return false;
-    final post = _posts[idx];
-    if (!post.isMine || post.dealConfirmed || post.buyerTransportBooked) return false;
-
-    final price = agreedPrice ?? (post.isFree ? 0 : post.price);
-    _posts[idx] = post.copyWith(
-      dealConfirmed: true,
-      confirmedPrice: post.isFree ? 0 : price,
-      status: PassItemStatus.reserved,
-    );
-
-    final priceLine = post.isFree ? 'đồ cho tặng' : 'giá ${_formatMoney(price)}';
-    _appendSystemToAllThreads(
-      itemId,
-      PassChatMessage(
-        text: 'Đã chốt đơn ($priceLine). Bạn có thể đặt xe lấy đồ ngay.',
-        fromBuyer: false,
-        time: _now(),
-        isDealConfirm: true,
-      ),
-    );
-    return true;
-  }
-
-  /// Huỷ chốt đơn — chỉ khi khách chưa đặt xe.
-  Future<bool> cancelDealConfirmation(String itemId) async {
-    await Future<void>.delayed(const Duration(milliseconds: 140));
-    final idx = _posts.indexWhere((e) => e.id == itemId);
-    if (idx == -1) return false;
-    final post = _posts[idx];
-    if (!post.sellerCanCancelDeal) return false;
-
-    _posts[idx] = post.copyWith(
-      dealConfirmed: false,
-      clearConfirmedPrice: true,
-      status: PassItemStatus.open,
-    );
-
-    _appendSystemToAllThreads(
-      itemId,
-      PassChatMessage(
-        text: 'Người bán đã huỷ chốt đơn. Thương lượng lại giá — đặt xe sẽ mở sau khi chốt đơn lần nữa.',
-        fromBuyer: false,
-        time: _now(),
-        isDealCancel: true,
-      ),
-    );
-    return true;
-  }
-
-  /// Gọi khi người mua tiếp tục luồng đặt xe (đã chọn địa chỉ nhận).
-  Future<void> markTransportBooked(String itemId) async {
-    final idx = _posts.indexWhere((e) => e.id == itemId);
-    if (idx == -1) return;
-    final post = _posts[idx];
-    if (!post.dealConfirmed || post.buyerTransportBooked) return;
-    _posts[idx] = post.copyWith(buyerTransportBooked: true);
-  }
-
-  static String _formatMoney(int amount) {
-    final s = amount.toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-    }
-    return '$bufđ';
-  }
-
-  Future<List<PassInterestedBuyer>> interestedBuyers(String itemId) async {
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    final list = List<PassInterestedBuyer>.from(_interestedByPost[itemId] ?? const []);
-    for (final b in list) {
-      _ensureThread(itemId, b.id);
-    }
-    list.sort((a, b) => b.interestedAt.compareTo(a.interestedAt));
-    return list;
-  }
+  // ── API-065: Quan tâm tin ────────────────────────────────────────────────
 
   Future<void> expressInterest(String id) async {
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    final idx = _posts.indexWhere((e) => e.id == id);
-    if (idx == -1) return;
-
-    final buyers = _interestedByPost.putIfAbsent(id, () => []);
-    if (!buyers.any((b) => b.id == currentBuyerId)) {
-      buyers.insert(
-        0,
-        PassInterestedBuyer(
-          id: currentBuyer.id,
-          name: currentBuyer.name,
-          contact: currentBuyer.contact,
-          area: currentBuyer.area,
-          interestedAt: DateTime.now(),
-          note: currentBuyer.note,
-          lastMessage: 'Chào bạn, mình quan tâm món này.',
-        ),
-      );
-      _ensureThread(id, currentBuyerId, seedBuyerOpens: true);
+    final envelope = await _api.guard(() => _api.post('/marketplace/listings/$id/interest', body: {}));
+    final newCount = (envelope['data']?['interest_count'] as num?)?.toInt();
+    final idx = _cache.indexWhere((e) => e.id == id);
+    if (idx != -1 && newCount != null) {
+      _cache[idx] = _cache[idx].copyWith(interestedCount: newCount);
     }
-    _posts[idx] = _posts[idx].copyWith(interestedCount: buyers.length);
+  }
+
+  // ── API-065b: Bỏ quan tâm ────────────────────────────────────────────────
+
+  Future<void> removeInterest(String id) async {
+    await _api.guard(() => _api.delete('/marketplace/listings/$id/interest'));
+  }
+
+  // ── My Interests: Tin tôi quan tâm ───────────────────────────────────────
+
+  Future<List<PassItemPost>> myInterests() async {
+    try {
+      final myId = await _myId();
+      final envelope = await _api.guard(() => _api.get('/marketplace/my-interests'));
+      final raw = (envelope['listings'] as List?) ?? [];
+      return raw.map((e) => _fromJson(Map<String, dynamic>.from(e as Map), myId: myId)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── API-066: DS khách quan tâm ───────────────────────────────────────────
+
+  Future<List<PassInterestedBuyer>> interestedBuyers(String itemId) async {
+    try {
+    final envelope = await _api.guard(() => _api.get('/marketplace/listings/$itemId/interests'));
+    final raw = (envelope['data'] as List?) ?? [];
+    return raw.map((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      return PassInterestedBuyer(
+        id:             m['id'] as String,
+        name:           m['name'] as String? ?? '',
+        contact:        m['contact'] as String? ?? '',
+        area:           '',
+        interestedAt:   DateTime.parse(m['interested_at'] as String),
+        note:           m['note'] as String?,
+        lastMessage:    m['last_message'] as String?,
+        unreadForSeller: (m['unread_count'] as num?)?.toInt() ?? 0,
+      );
+    }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── API-067: Đọc chat ────────────────────────────────────────────────────
+
+  Future<List<PassChatMessage>> messages(String itemId, String? buyerId, {bool markRead = false}) async {
+    if (buyerId == null) return [];
+    try {
+      final envelope = await _api.guard(
+        () => _api.get('/marketplace/listings/$itemId/conversations/$buyerId/messages'),
+      );
+      final raw = (envelope['data']?['messages'] as List?) ?? [];
+      return raw.map((e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        final dt = DateTime.parse(m['created_at'] as String).toLocal();
+        final timeStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        return PassChatMessage(
+          text:          m['text'] as String,
+          fromBuyer:     m['from_buyer'] as bool? ?? true,
+          time:          timeStr,
+          isOffer:       m['is_offer'] as bool? ?? false,
+          offerAmount:   (m['offer_amount'] as num?)?.toInt(),
+          isDealConfirm: m['is_deal_confirm'] as bool? ?? false,
+          isDealCancel:  m['is_deal_cancel'] as bool? ?? false,
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── API-068: Gửi chat ────────────────────────────────────────────────────
+
+  Future<void> sendMessageApi(String itemId, String? buyerId, PassChatMessage message, {required bool sentBySeller}) async {
+    if (buyerId == null) return;
+    await _api.guard(() => _api.post(
+      '/marketplace/listings/$itemId/conversations/$buyerId/messages',
+      body: {
+        'text': message.text,
+        if (message.isOffer && message.offerAmount != null) ...{
+          'is_offer': true,
+          'offer_amount': message.offerAmount,
+        },
+      },
+    ));
+  }
+
+  // ── sendMessage (gọi API + update local preview) ─────────────────────────
+
+  void sendMessage(String itemId, String? buyerId, PassChatMessage message, {required bool sentBySeller}) {
+    if (buyerId == null) return;
+    if (message.isDealConfirm || message.isDealCancel) return;
+    // Gọi API async, không await (fire-and-forget, UI optimistic update)
+    sendMessageApi(itemId, buyerId, message, sentBySeller: sentBySeller);
   }
 
   void markThreadRead(String itemId, String buyerId) {
-    final buyers = _interestedByPost[itemId];
-    if (buyers == null) return;
-    final i = buyers.indexWhere((b) => b.id == buyerId);
-    if (i != -1) buyers[i] = buyers[i].copyWith(unreadForSeller: 0);
+    // Handled server-side khi gọi getMessages
   }
 
-  // ----- Chat theo từng khách quan tâm -----
-  static final Map<String, List<PassChatMessage>> _chats = {};
+  // ── API-073: Upload ảnh tin ──────────────────────────────────────────────
 
-  static String _threadKey(String itemId, String buyerId) => '$itemId::$buyerId';
-
-  void _ensureThread(String itemId, String buyerId, {bool seedBuyerOpens = false}) {
-    final key = _threadKey(itemId, buyerId);
-    if (_chats.containsKey(key)) return;
-    if (seedBuyerOpens) {
-      _chats[key] = [
-        PassChatMessage(
-          text: 'Chào bạn, mình quan tâm món này.',
-          fromBuyer: true,
-          time: _now(),
-        ),
-        const PassChatMessage(
-          text: 'Chào bạn, mình vẫn còn món này nhé. Bạn quan tâm phần nào?',
-          fromBuyer: false,
-          time: '09:02',
-        ),
-      ];
-    } else {
-      _chats[key] = [
-        const PassChatMessage(
-          text: 'Chào shop, mình muốn hỏi thêm về món này.',
-          fromBuyer: true,
-          time: '09:01',
-        ),
-        const PassChatMessage(
-          text: 'Chào bạn, mình vẫn còn món này nhé.',
-          fromBuyer: false,
-          time: '09:02',
-        ),
-      ];
-    }
-  }
-
-  void _appendSystemToAllThreads(String itemId, PassChatMessage message) {
-    final buyers = _interestedByPost[itemId] ?? const [];
-    if (buyers.isEmpty) {
-      final key = _threadKey(itemId, currentBuyerId);
-      _chats.putIfAbsent(key, () => []);
-      _chats[key]!.add(message);
-      return;
-    }
-    for (final b in buyers) {
-      final key = _threadKey(itemId, b.id);
-      _chats.putIfAbsent(key, () => []);
-      _chats[key]!.add(message);
-    }
-  }
-
-  Future<List<PassChatMessage>> messages(
-    String itemId,
-    String buyerId, {
-    bool markRead = false,
-  }) async {
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    _ensureThread(itemId, buyerId);
-    if (markRead) markThreadRead(itemId, buyerId);
-    final key = _threadKey(itemId, buyerId);
-    return List<PassChatMessage>.from(_chats[key]!);
-  }
-
-  void sendMessage(
-    String itemId,
-    String buyerId,
-    PassChatMessage message, {
-    required bool sentBySeller,
-  }) {
-    if (message.isDealConfirm || message.isDealCancel) return;
-    final key = _threadKey(itemId, buyerId);
-    _chats.putIfAbsent(key, () => []);
-    final stored = PassChatMessage(
-      text: message.text,
-      fromBuyer: !sentBySeller,
-      time: message.time,
-      isOffer: message.isOffer,
-      offerAmount: message.offerAmount,
+  Future<String> uploadImage({required String filePath}) async {
+    final envelope = await _api.guard(
+      () => _api.uploadFile('/marketplace/listings/images', filePath: filePath, field: 'image'),
     );
-    _chats[key]!.add(stored);
-    _updateBuyerPreview(itemId, buyerId, stored.text, sentBySeller: sentBySeller);
-
-    // Phản hồi mock phía đối tác.
-    final reply = stored.isOffer
-        ? PassChatMessage(
-            text: sentBySeller
-                ? 'Mình chấp nhận mức ${message.offerAmount}đ, bạn đặt xe nhé!'
-                : 'Mình xem giá ${message.offerAmount}đ nhé, bạn qua lấy được luôn không?',
-            fromBuyer: sentBySeller,
-            time: _now(),
-          )
-        : PassChatMessage(
-            text: sentBySeller ? 'Ok bạn, mình chờ bạn đặt xe nhé!' : 'Ok bạn, mình phản hồi ngay nhé!',
-            fromBuyer: sentBySeller,
-            time: _now(),
-          );
-    _chats[key]!.add(reply);
-    _updateBuyerPreview(itemId, buyerId, reply.text, sentBySeller: reply.fromBuyer == false);
+    final url = envelope['data']?['url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw Exception('Không nhận được URL ảnh từ server');
+    }
+    return url;
   }
 
-  void _updateBuyerPreview(
-    String itemId,
-    String buyerId,
-    String text, {
-    required bool sentBySeller,
-  }) {
-    final buyers = _interestedByPost[itemId];
-    if (buyers == null) return;
-    final i = buyers.indexWhere((b) => b.id == buyerId);
-    if (i == -1) return;
-    buyers[i] = buyers[i].copyWith(
-      lastMessage: text,
-      unreadForSeller: sentBySeller ? buyers[i].unreadForSeller : buyers[i].unreadForSeller + 1,
-    );
+  // ── API-069: Chốt đơn ────────────────────────────────────────────────────
+
+  Future<bool> confirmDeal(String itemId, {int? agreedPrice, String? buyerId}) async {
+    if (buyerId == null) return false;
+    try {
+      await _api.guard(() => _api.post(
+        '/marketplace/listings/$itemId/conversations/$buyerId/deal',
+        body: {
+          if (agreedPrice != null && agreedPrice > 0) 'agreed_price': agreedPrice,
+        },
+      ));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  static String _now() {
-    final n = DateTime.now();
-    return '${n.hour.toString().padLeft(2, '0')}:${n.minute.toString().padLeft(2, '0')}';
+  // ── API-070: Huỷ chốt ────────────────────────────────────────────────────
+
+  Future<bool> cancelDealConfirmation(String itemId) async {
+    try {
+      await _api.guard(() => _api.delete('/marketplace/listings/$itemId/deal'));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  // ----- Nhà xe báo giá vận chuyển cho món đồ -----
+  // ── API-071: Buyer đặt xe ─────────────────────────────────────────────────
+
+  Future<void> markTransportBooked(String itemId) async {
+    try {
+      await _api.guard(() => _api.post(
+        '/marketplace/listings/$itemId/transport-booked',
+        body: {},
+      ));
+    } catch (_) {}
+  }
+
+  // ── Transport quotes (mock — Batch 4) ────────────────────────────────────
+
   Future<List<PassTransportQuote>> transportQuotes(PassItemPost post) async {
     await Future<void>.delayed(const Duration(milliseconds: 260));
     return const [
-      PassTransportQuote(
-        id: 'tq1',
-        providerName: 'Minh Quân Express',
-        vehicleLabel: 'Xe tải nhỏ 500kg',
-        rating: 4.9,
-        price: 90000,
-        etaMinutes: 20,
-        badge: 'Rẻ nhất',
-      ),
-      PassTransportQuote(
-        id: 'tq2',
-        providerName: 'FastMove SV',
-        vehicleLabel: 'Xe ba gác',
-        rating: 4.7,
-        price: 75000,
-        etaMinutes: 30,
-      ),
-      PassTransportQuote(
-        id: 'tq3',
-        providerName: 'GreenLine Moving',
-        vehicleLabel: 'Xe tải 1 tấn',
-        rating: 4.8,
-        price: 120000,
-        etaMinutes: 18,
-        badge: 'Nhanh nhất',
-      ),
+      PassTransportQuote(id: 'tq1', providerName: 'Minh Quân Express', vehicleLabel: 'Xe tải nhỏ 500kg', rating: 4.9, price: 90000, etaMinutes: 20, badge: 'Rẻ nhất'),
+      PassTransportQuote(id: 'tq2', providerName: 'FastMove SV', vehicleLabel: 'Xe ba gác', rating: 4.7, price: 75000, etaMinutes: 30),
+      PassTransportQuote(id: 'tq3', providerName: 'GreenLine Moving', vehicleLabel: 'Xe tải 1 tấn', rating: 4.8, price: 120000, etaMinutes: 18, badge: 'Nhanh nhất'),
     ];
   }
 }

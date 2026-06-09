@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { serverGet, serverPut } from "@/lib/server-api";
 import type { DisputeStatus } from "@/lib/types";
 
 export async function getDisputes({
@@ -12,83 +12,60 @@ export async function getDisputes({
   pageSize?: number;
   status?: DisputeStatus;
 }) {
-  const supabase = await createClient();
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
-
-  let query = supabase
-    .from("disputes")
-    .select(
-      `id, dispute_type, subject, status, priority, refund_amount, created_at, resolved_at,
-       order:orders!disputes_order_id_fkey(id, order_number, total_price),
-       raiser:profiles!disputes_raised_by_fkey(id, full_name, role, avatar_url)`,
-      { count: "exact" }
-    )
-    .order("created_at", { ascending: false })
-    .range(from, to);
-
-  if (status) query = query.eq("status", status);
-
-  const { data, error, count } = await query;
-  return {
-    data: data ?? [],
-    error,
-    meta: {
-      page,
-      pageSize,
-      total: count ?? 0,
-      totalPages: Math.ceil((count ?? 0) / pageSize),
-    },
-  };
+  try {
+    const data = await serverGet<any>("/admin/disputes", { page, pageSize, status });
+    if (data.success) {
+      return {
+        data: data.data ?? [],
+        error: null,
+        meta: data.meta ?? { page, pageSize, total: 0, totalPages: 0 },
+      };
+    }
+    throw new Error(data.message || "Failed to fetch disputes");
+  } catch (error) {
+    console.error("Get disputes error:", error);
+    return {
+      data: [],
+      error: error instanceof Error ? error : new Error("Unknown error"),
+      meta: { page, pageSize, total: 0, totalPages: 0 },
+    };
+  }
 }
 
 export async function getDisputeById(id: string) {
-  const supabase = await createClient();
-  const [disputeRes, messagesRes] = await Promise.all([
-    supabase
-      .from("disputes")
-      .select(
-        `*, order:orders!disputes_order_id_fkey(*, customer:profiles!orders_customer_id_fkey(id, full_name), provider:profiles!orders_provider_id_fkey(id, full_name, business_name)),
-         raiser:profiles!disputes_raised_by_fkey(id, full_name, role, avatar_url),
-         against:profiles!disputes_against_user_id_fkey(id, full_name, role, avatar_url)`
-      )
-      .eq("id", id)
-      .single(),
-    supabase
-      .from("dispute_messages")
-      .select("*, sender:profiles!dispute_messages_sender_id_fkey(id, full_name, role, avatar_url)")
-      .eq("dispute_id", id)
-      .order("created_at", { ascending: true }),
-  ]);
-
-  return {
-    dispute: disputeRes.data,
-    messages: messagesRes.data ?? [],
-    error: disputeRes.error,
-  };
+  try {
+    const data = await serverGet<any>(`/admin/disputes/${id}`);
+    if (data.success && data.data) {
+      return {
+        dispute: data.data,
+        messages: data.data.dispute_messages ?? [],
+        error: null,
+      };
+    }
+    throw new Error(data.message || "Failed to fetch dispute");
+  } catch (error) {
+    return { dispute: null, messages: [], error: error instanceof Error ? error : new Error("Unknown error") };
+  }
 }
 
 export async function resolveDispute(
   disputeId: string,
-  adminId: string,
+  _adminId: string,
   resolution: string,
   resolutionType: string,
   refundAmount: number | null
 ) {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("disputes")
-    .update({
-      status: "resolved",
+  try {
+    const data = await serverPut<any>(`/admin/disputes/${disputeId}/resolve`, {
       resolution,
       resolution_type: resolutionType,
-      refund_amount: refundAmount,
-      resolved_by: adminId,
-      resolved_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", disputeId);
-  return { error };
+      refund_amount: refundAmount ?? undefined,
+    });
+    if (data.success) return { error: null };
+    throw new Error(data.message || "Failed to resolve dispute");
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error("Unknown error") };
+  }
 }
 
 export async function getRefunds({
@@ -100,46 +77,32 @@ export async function getRefunds({
   pageSize?: number;
   status?: string;
 }) {
-  const supabase = await createClient();
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
-
-  let query = supabase
-    .from("refunds")
-    .select(
-      `id, refund_amount, refund_reason, status, created_at, processed_at,
-       order:orders!refunds_order_id_fkey(id, order_number),
-       requester:profiles!refunds_requested_by_fkey(id, full_name, role)`,
-      { count: "exact" }
-    )
-    .order("created_at", { ascending: false })
-    .range(from, to);
-
-  if (status) query = query.eq("status", status);
-
-  const { data, error, count } = await query;
-  return {
-    data: data ?? [],
-    error,
-    meta: {
-      page,
-      pageSize,
-      total: count ?? 0,
-      totalPages: Math.ceil((count ?? 0) / pageSize),
-    },
-  };
+  try {
+    const data = await serverGet<any>("/admin/refunds", { page, pageSize, status });
+    if (data.success) {
+      return {
+        data: data.data ?? [],
+        error: null,
+        meta: data.meta ?? { page, pageSize, total: 0, totalPages: 0 },
+      };
+    }
+    throw new Error(data.message || "Failed to fetch refunds");
+  } catch (error) {
+    console.error("Get refunds error:", error);
+    return {
+      data: [],
+      error: error instanceof Error ? error : new Error("Unknown error"),
+      meta: { page, pageSize, total: 0, totalPages: 0 },
+    };
+  }
 }
 
-export async function approveRefund(refundId: string, adminId: string) {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("refunds")
-    .update({
-      status: "completed",
-      approved_by: adminId,
-      processed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", refundId);
-  return { error };
+export async function approveRefund(refundId: string, _adminId: string) {
+  try {
+    const data = await serverPut<any>(`/admin/refunds/${refundId}/approve`);
+    if (data.success) return { error: null };
+    throw new Error(data.message || "Failed to approve refund");
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error("Unknown error") };
+  }
 }

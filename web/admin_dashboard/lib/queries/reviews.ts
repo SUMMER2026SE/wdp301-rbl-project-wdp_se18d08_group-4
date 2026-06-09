@@ -1,6 +1,7 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { serverGet, serverPut } from "@/lib/server-api";
+import { normalizeMeta } from "@/lib/normalize-meta";
 
 export async function getReviews({
   page = 1,
@@ -13,79 +14,57 @@ export async function getReviews({
   flagged?: boolean;
   hidden?: boolean;
 }) {
-  const supabase = await createClient();
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
-
-  let query = supabase
-    .from("reviews")
-    .select(
-      `id, rating, comment, tags, images, is_published, is_flagged, flagged_reason, is_hidden, hidden_reason, created_at,
-       customer:profiles!reviews_customer_id_fkey(id, full_name, avatar_url),
-       provider:profiles!reviews_provider_id_fkey(id, full_name, business_name, avatar_url),
-       order:orders!reviews_order_id_fkey(id, order_number)`,
-      { count: "exact" }
-    )
-    .order("created_at", { ascending: false })
-    .range(from, to);
-
-  if (flagged !== undefined) query = query.eq("is_flagged", flagged);
-  if (hidden !== undefined) query = query.eq("is_hidden", hidden);
-
-  const { data, error, count } = await query;
-  return {
-    data: data ?? [],
-    error,
-    meta: {
+  try {
+    const data = await serverGet<any>("/admin/reviews", {
       page,
       pageSize,
-      total: count ?? 0,
-      totalPages: Math.ceil((count ?? 0) / pageSize),
-    },
-  };
+      flagged: flagged === undefined ? "all" : String(flagged),
+      hidden: hidden === undefined ? "all" : String(hidden),
+    });
+    if (data.success) {
+      return {
+        data: data.data ?? [],
+        error: null,
+        meta: normalizeMeta(data.meta, { page, pageSize }),
+      };
+    }
+    throw new Error(data.message || "Failed to fetch reviews");
+  } catch (error) {
+    console.error("Get reviews error:", error);
+    return {
+      data: [],
+      error: error instanceof Error ? error : new Error("Unknown error"),
+      meta: { page, pageSize, total: 0, totalPages: 0 },
+    };
+  }
 }
 
-export async function hideReview(reviewId: string, reason: string, adminId: string) {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("reviews")
-    .update({
-      is_hidden: true,
-      hidden_reason: reason,
-      is_published: false,
-      moderated_by: adminId,
-      moderated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", reviewId);
-  return { error };
+export async function hideReview(reviewId: string, reason: string, _adminId: string) {
+  try {
+    const data = await serverPut<any>(`/admin/reviews/${reviewId}/hide`, { reason });
+    if (data.success) return { error: null };
+    throw new Error(data.message || "Failed to hide review");
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error("Unknown error") };
+  }
 }
 
-export async function unhideReview(reviewId: string, adminId: string) {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("reviews")
-    .update({
-      is_hidden: false,
-      hidden_reason: null,
-      is_published: true,
-      moderated_by: adminId,
-      moderated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", reviewId);
-  return { error };
+export async function unhideReview(reviewId: string, _adminId: string) {
+  try {
+    const data = await serverPut<any>(`/admin/reviews/${reviewId}/unhide`);
+    if (data.success) return { error: null };
+    throw new Error(data.message || "Failed to unhide review");
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error("Unknown error") };
+  }
 }
 
 export async function flagReview(reviewId: string, reason: string) {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("reviews")
-    .update({
-      is_flagged: true,
-      flagged_reason: reason,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", reviewId);
-  return { error };
+  try {
+    const data = await serverPut<any>(`/admin/reviews/${reviewId}/flag`, { reason });
+    if (data.success) return { error: null };
+    throw new Error(data.message || "Failed to flag review");
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error("Unknown error") };
+  }
 }

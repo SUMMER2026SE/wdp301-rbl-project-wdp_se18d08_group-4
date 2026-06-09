@@ -2,7 +2,11 @@
 .env
 .env.local
 .env.*.local
+backend/.env
+web/admin_dashboard/.env.local
 !.env.example
+!backend/.env.example
+!web/admin_dashboard/.env.example
 
 # Node
 node_modules/

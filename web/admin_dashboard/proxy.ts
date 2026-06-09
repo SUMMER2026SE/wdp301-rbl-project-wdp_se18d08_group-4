@@ -1,84 +1,55 @@
-import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+export function proxy(request: NextRequest) {
+  const token = request.cookies.get('admin_token')?.value;
+  const { pathname } = request.nextUrl;
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+  const isLoginPage = pathname === '/login';
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const protectedRoutes = [
+    '/dashboard',
+    '/users',
+    '/verifications',
+    '/orders',
+    '/disputes',
+    '/reviews',
+    '/analytics',
+    '/notifications',
+    '/activity-logs',
+    '/settings',
+    '/profile',
+  ];
 
-  const pathname = request.nextUrl.pathname;
+  const isProtectedRoute =
+    protectedRoutes.some((route) => pathname.startsWith(route)) ||
+    pathname === '/';
 
-  // Protect all dashboard routes
-  if (
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/users") ||
-    pathname.startsWith("/verifications") ||
-    pathname.startsWith("/orders") ||
-    pathname.startsWith("/disputes") ||
-    pathname.startsWith("/reviews") ||
-    pathname.startsWith("/analytics") ||
-    pathname.startsWith("/notifications") ||
-    pathname.startsWith("/activity-logs") ||
-    pathname.startsWith("/settings") ||
-    pathname === "/"
-  ) {
-    if (!user) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile || profile.role !== "admin") {
-      await supabase.auth.signOut();
-      return NextResponse.redirect(new URL("/login?error=unauthorized", request.url));
-    }
+  if (!token && isProtectedRoute) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // Redirect authenticated admins away from login
-  if (pathname === "/login" && user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (profile?.role === "admin") {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
+  if (token && isLoginPage) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
-  return supabaseResponse;
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    '/dashboard/:path*',
+    '/users/:path*',
+    '/verifications/:path*',
+    '/orders/:path*',
+    '/disputes/:path*',
+    '/reviews/:path*',
+    '/analytics/:path*',
+    '/notifications/:path*',
+    '/activity-logs/:path*',
+    '/settings/:path*',
+    '/profile/:path*',
+    '/login',
+    '/',
   ],
 };

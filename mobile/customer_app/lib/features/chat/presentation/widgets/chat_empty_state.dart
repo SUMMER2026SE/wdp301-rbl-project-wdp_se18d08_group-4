@@ -22,7 +22,7 @@ class ChatEmptyState extends StatelessWidget {
       ChatEmptyVariant.noActiveOrder => (
           Icons.chat_bubble_outline_rounded,
           'Chưa có cuộc trò chuyện',
-          'Bạn có thể nhắn tin với tài xế khi có đơn đang được thực hiện.',
+          'Chat mở khi nhà xe xác nhận lịch chuyển trọ. Vào Tiến trình báo giá để nhắn tin.',
           ('Đặt dịch vụ ngay', '/booking/location'),
         ),
       ChatEmptyVariant.waitingDriver => (

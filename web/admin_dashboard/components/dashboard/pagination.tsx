@@ -69,7 +69,7 @@ export function Pagination({
             </span>
           ) : (
             <button
-              key={p}
+              key={`page-${p}`}
               onClick={() => onPageChange(p as number)}
               className={cn(
                 "w-8 h-8 rounded-lg text-sm font-medium transition-colors",

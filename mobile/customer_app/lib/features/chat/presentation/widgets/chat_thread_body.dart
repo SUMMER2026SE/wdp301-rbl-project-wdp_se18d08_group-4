@@ -13,10 +13,12 @@ class ChatThreadBody extends StatefulWidget {
     super.key,
     required this.conversationId,
     this.readOnly = false,
+    this.readOnlyHint,
   });
 
   final String conversationId;
   final bool readOnly;
+  final String? readOnlyHint;
 
   @override
   State<ChatThreadBody> createState() => _ChatThreadBodyState();
@@ -139,7 +141,7 @@ class _ChatThreadBodyState extends State<ChatThreadBody> {
               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
               color: c.surfaceTint,
               child: Text(
-                'Đơn đã kết thúc — chỉ xem lại tin nhắn.',
+                widget.readOnlyHint ?? 'Đơn đã kết thúc — chỉ xem lại tin nhắn.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
               ),

@@ -68,13 +68,13 @@ class ProvidersRepository {
         comment: 'Dịch vụ của $name khá tốt, đúng giờ và hỗ trợ nhiệt tình.',
         timeAgoLabel: '3 ngày trước',
       ),
-      ProviderReview(
+      const ProviderReview(
         author: 'Khách hàng B',
         rating: 4.7,
         comment: 'Giá hợp lý, không phát sinh thêm chi phí.',
         timeAgoLabel: '1 tuần trước',
       ),
-      ProviderReview(
+      const ProviderReview(
         author: 'Khách hàng C',
         rating: 4.9,
         comment: 'Đồ đạc được bọc kỹ, đội ngũ thân thiện.',

@@ -4,10 +4,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
-import '../../../../core/constants/app_images.dart';
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/booking_scaffold.dart';
-import '../../../../core/widgets/cached_hero_image.dart';
 import '../../../../core/widgets/smooth_cta_button.dart';
 import '../../../pass_items/data/pass_item_repository.dart';
 import '../../domain/booking_models.dart';
@@ -47,7 +45,7 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
         return BookingScaffold(
           title: state.passItemDelivery
               ? 'Chở đồ về nhà'
-              : (isLabor ? 'Địa điểm làm việc' : 'Chọn địa điểm'),
+              : (isLabor ? 'Địa điểm làm việc' : 'Trọ cũ → trọ mới'),
           trailing: CircleAvatar(
             radius: 18.r,
             backgroundColor: c.surfaceTint,
@@ -61,8 +59,8 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
                 SizedBox(height: 12.h),
               ],
               _routeCard(context, state, c),
-              SizedBox(height: 20.h),
-              CachedHeroImage(url: AppImages.mapPreview, height: 160.h),
+              SizedBox(height: 16.h),
+              if (!isLabor && !state.passItemDelivery) _quoteFlowHint(c),
               SizedBox(height: 24.h),
               _recentHeader(c),
               SizedBox(height: 12.h),
@@ -76,7 +74,7 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
             child: Padding(
               padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 16.h),
               child: SmoothCtaButton(
-                label: 'Tiếp tục',
+                label: isLabor ? 'Tiếp tục' : 'Mô tả trọ',
                 onPressed: state.destination.trim().isEmpty
                     ? null
                     : () async {
@@ -85,7 +83,7 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
                         }
                         if (!context.mounted) return;
                         context.push(
-                          isLabor ? '/booking/labor/configure' : '/booking/packages',
+                          isLabor ? '/booking/labor/configure' : '/booking/dorm-details',
                         );
                       },
               ),
@@ -93,6 +91,45 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _quoteFlowHint(UniMoveColors c) {
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.description_outlined, color: c.primary, size: 20.sp),
+              SizedBox(width: 8.w),
+              Expanded(
+                child: Text(
+                  'Báo giá minh bạch — không cần bản đồ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.sp,
+                    color: c.onSurface,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8.h),
+          Text(
+            'Bước tiếp: mô tả tầng, hẻm, khối lượng đồ. Nhà xe báo giá + phụ phí ngay trên app.',
+            style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+          ),
+        ],
+      ),
     );
   }
 

@@ -10,6 +10,7 @@ import '../../../../core/widgets/cached_hero_image.dart';
 import '../../domain/booking_models.dart';
 import '../cubit/booking_flow_cubit.dart';
 import '../cubit/booking_flow_state.dart';
+import '../widgets/provider_reviews_panel.dart';
 
 class ChoosePartnerPage extends StatefulWidget {
   const ChoosePartnerPage({super.key});
@@ -292,153 +293,16 @@ class _ChoosePartnerPageState extends State<ChoosePartnerPage> {
     return list;
   }
 
-  Future<void> _showReviewsSheet(BuildContext context, PartnerOffer p, UniMoveColors c) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: c.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
+  Future<void> _showReviewsSheet(BuildContext context, PartnerOffer p, UniMoveColors c) {
+    return showProviderReviewsSheet(
+      context,
+      providerName: p.name,
+      subtitle: '${p.vehicleLabel} · ${p.completedTrips} chuyến · Cách bạn ${p.distanceKm} km',
+      stats: ProviderReviewStats.from(
+        averageRating: p.rating,
+        totalCount: p.reviewCount,
+        reviews: p.recentReviews,
       ),
-      builder: (ctx) {
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 18.h),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44.w,
-                    height: 5.h,
-                    decoration: BoxDecoration(
-                      color: c.border,
-                      borderRadius: BorderRadius.circular(999.r),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 14.h),
-                Text(
-                  p.name,
-                  style: TextStyle(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.w800,
-                    color: c.onSurface,
-                  ),
-                ),
-                SizedBox(height: 8.h),
-                Wrap(
-                  spacing: 8.w,
-                  runSpacing: 8.h,
-                  children: [
-                    _metaChip(c, Icons.star_rounded, '${p.rating.toStringAsFixed(1)} điểm'),
-                    _metaChip(c, Icons.rate_review_outlined, '${p.reviewCount} đánh giá'),
-                    _metaChip(c, Icons.local_shipping_outlined, '${p.completedTrips} chuyến'),
-                  ],
-                ),
-                SizedBox(height: 12.h),
-                SizedBox(
-                  height: 260.h,
-                  child: ListView.separated(
-                    itemCount: p.recentReviews.length,
-                    separatorBuilder: (_, __) => Divider(height: 18.h, color: c.border),
-                    itemBuilder: (_, index) {
-                      final review = p.recentReviews[index];
-                      return _reviewItem(c, review);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _metaChip(UniMoveColors c, IconData icon, String label) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-      decoration: BoxDecoration(
-        color: c.chipBg,
-        borderRadius: BorderRadius.circular(999.r),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14.sp, color: c.primary),
-          SizedBox(width: 6.w),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12.sp,
-              fontWeight: FontWeight.w700,
-              color: c.onSurface,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _reviewItem(UniMoveColors c, ProviderReview review) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            CircleAvatar(
-              radius: 13.r,
-              backgroundColor: c.iconBgSecondary,
-              child: Text(
-                review.author.substring(0, 1).toUpperCase(),
-                style: TextStyle(
-                  fontSize: 11.sp,
-                  fontWeight: FontWeight.w700,
-                  color: c.primary,
-                ),
-              ),
-            ),
-            SizedBox(width: 8.w),
-            Expanded(
-              child: Text(
-                review.author,
-                style: TextStyle(
-                  fontSize: 13.sp,
-                  fontWeight: FontWeight.w700,
-                  color: c.onSurface,
-                ),
-              ),
-            ),
-            Icon(Icons.star_rounded, size: 14.sp, color: Colors.amber.shade700),
-            SizedBox(width: 2.w),
-            Text(
-              review.rating.toStringAsFixed(1),
-              style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w700, color: c.onSurface),
-            ),
-          ],
-        ),
-        SizedBox(height: 6.h),
-        Text(
-          review.comment,
-          style: TextStyle(
-            fontSize: 13.sp,
-            height: 1.35,
-            color: c.onSurface,
-          ),
-        ),
-        SizedBox(height: 4.h),
-        Text(
-          review.timeAgoLabel,
-          style: TextStyle(
-            fontSize: 11.sp,
-            fontWeight: FontWeight.w600,
-            color: c.onSurfaceMuted,
-          ),
-        ),
-      ],
     );
   }
 }

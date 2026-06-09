@@ -350,6 +350,7 @@ export function OrdersClient({
                     }}
                   >
                     {[
+                      "STT",
                       "#Mã đơn",
                       "Khách hàng",
                       "Nhà vận chuyển",
@@ -380,6 +381,14 @@ export function OrdersClient({
                         borderTop: idx > 0 ? "1px solid var(--border)" : undefined,
                       }}
                     >
+                      {/* STT */}
+                      <td
+                        className="px-4 py-3 text-center text-xs font-medium w-12"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        {(meta.page - 1) * meta.pageSize + idx + 1}
+                      </td>
+
                       {/* Order number */}
                       <td className="px-4 py-3">
                         <span

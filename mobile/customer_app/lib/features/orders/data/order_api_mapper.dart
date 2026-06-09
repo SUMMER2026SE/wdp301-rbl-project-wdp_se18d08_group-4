@@ -71,9 +71,9 @@ abstract final class OrderApiMapper {
 
   static List<TrackingStep> _stepsForStatus(OrderStatus status) {
     const labels = [
-      ('pending', 'Đã đặt đơn'),
-      ('accepted', 'Nhà xe nhận'),
-      ('picking_up', 'Đang lấy hàng'),
+      ('pending', 'Chờ báo giá'),
+      ('accepted', 'Đã chốt giá'),
+      ('picking_up', 'Đang lấy đồ'),
       ('in_progress', 'Đang vận chuyển'),
       ('completed', 'Hoàn thành'),
     ];

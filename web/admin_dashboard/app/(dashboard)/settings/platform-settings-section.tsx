@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils";
 import type { PlatformSetting } from "./page";
 
 interface PlatformSettingsSectionProps {
-  settings: PlatformSetting[];
+  settings?: PlatformSetting[];
 }
 
-export function PlatformSettingsSection({ settings }: PlatformSettingsSectionProps) {
+export function PlatformSettingsSection({ settings = [] }: PlatformSettingsSectionProps) {
   const [items, setItems] = useState<PlatformSetting[]>(settings);
 
   return (

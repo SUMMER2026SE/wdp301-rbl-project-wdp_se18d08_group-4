@@ -30,9 +30,12 @@ class PassItemPost {
     this.provinceId = '',
     required this.price,
     required this.imageUrl,
+    this.images = const [],
     required this.usageDuration,
     required this.posterName,
     required this.posterContact,
+    this.posterId = '',
+    this.posterAvatarUrl,
     required this.status,
     required this.createdAt,
     this.isNegotiable = false,
@@ -41,6 +44,8 @@ class PassItemPost {
     this.dealConfirmed = false,
     this.confirmedPrice,
     this.buyerTransportBooked = false,
+    this.isRated = false,
+    this.isInterested = false,
   });
 
   final String id;
@@ -59,10 +64,15 @@ class PassItemPost {
   final int price;
   final String imageUrl;
 
+  /// Tất cả ảnh; [imageUrl] là ảnh bìa (phần tử đầu tiên).
+  final List<String> images;
+
   /// Thời gian đã sử dụng (vd "6 tháng").
   final String usageDuration;
   final String posterName;
   final String posterContact;
+  final String posterId;
+  final String? posterAvatarUrl;
   final PassItemStatus status;
   final DateTime createdAt;
   final bool isNegotiable;
@@ -77,6 +87,12 @@ class PassItemPost {
 
   /// Người mua đã tiếp tục đặt xe — người bán không được huỷ chốt.
   final bool buyerTransportBooked;
+
+  /// Buyer đã gửi đánh giá cho giao dịch này.
+  final bool isRated;
+
+  /// Người dùng hiện tại đã bấm "Tôi muốn nhận" cho tin này.
+  final bool isInterested;
 
   bool get isFree => price <= 0;
 
@@ -93,6 +109,7 @@ class PassItemPost {
     String? provinceId,
     int? price,
     String? imageUrl,
+    List<String>? images,
     String? usageDuration,
     PassItemStatus? status,
     bool? isNegotiable,
@@ -100,6 +117,8 @@ class PassItemPost {
     bool? dealConfirmed,
     int? confirmedPrice,
     bool? buyerTransportBooked,
+    bool? isRated,
+    bool? isInterested,
     bool clearConfirmedPrice = false,
   }) {
     return PassItemPost(
@@ -112,9 +131,12 @@ class PassItemPost {
       provinceId: provinceId ?? this.provinceId,
       price: price ?? this.price,
       imageUrl: imageUrl ?? this.imageUrl,
+      images: images ?? this.images,
       usageDuration: usageDuration ?? this.usageDuration,
       posterName: posterName,
       posterContact: posterContact,
+      posterId: posterId,
+      posterAvatarUrl: posterAvatarUrl,
       status: status ?? this.status,
       createdAt: createdAt,
       isNegotiable: isNegotiable ?? this.isNegotiable,
@@ -123,6 +145,8 @@ class PassItemPost {
       dealConfirmed: dealConfirmed ?? this.dealConfirmed,
       confirmedPrice: clearConfirmedPrice ? null : (confirmedPrice ?? this.confirmedPrice),
       buyerTransportBooked: buyerTransportBooked ?? this.buyerTransportBooked,
+      isRated: isRated ?? this.isRated,
+      isInterested: isInterested ?? this.isInterested,
     );
   }
 }

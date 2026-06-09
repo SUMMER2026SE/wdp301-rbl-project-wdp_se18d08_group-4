@@ -65,6 +65,8 @@ class CustomerOrder {
     this.providerPlate,
     this.conversationId,
     this.hasReview = false,
+    this.scheduledPickupAt,
+    this.quoteReferenceId,
   });
 
   final String id;
@@ -89,6 +91,8 @@ class CustomerOrder {
   final String? providerPlate;
   final String? conversationId;
   final bool hasReview;
+  final DateTime? scheduledPickupAt;
+  final String? quoteReferenceId;
 
   String get packageDisplay => switch (packageLabel) {
         ServicePackageLabel.economy => 'Gói Economy',

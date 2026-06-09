@@ -169,11 +169,20 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _header(UniMoveColors c) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          'Hồ sơ',
-          style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w800, color: c.onSurface),
+        if (context.canPop())
+          IconButton(
+            onPressed: () => context.pop(),
+            icon: Icon(LucideIcons.arrowLeft, color: c.onSurface),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        if (context.canPop()) SizedBox(width: 8.w),
+        Expanded(
+          child: Text(
+            'Hồ sơ',
+            style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w800, color: c.onSurface),
+          ),
         ),
         ShadButton.outline(
           size: ShadButtonSize.sm,

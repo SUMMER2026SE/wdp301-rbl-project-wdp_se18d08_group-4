@@ -1,40 +1,55 @@
 import '../../features/auth/domain/provider_profile.dart';
 import '../../features/messages/domain/chat_models.dart';
 import '../../features/orders/domain/provider_order.dart';
-/// Dữ liệu mẫu cho phiên đăng nhập demo của đối tác (provider).
+
+/// Dữ liệu demo cho provider (không cần backend).
 abstract final class MockProviderData {
   static const providerId = 'p1000000-0000-4000-8000-000000000001';
 
-  /// User JSON lưu vào storage khi đăng nhập demo (khớp schema `profiles`).
-  static const Map<String, dynamic> userJson = {
+  /// Tài khoản provider demo — đã xác thực đủ giấy tờ, có thể nhận đơn.
+  static const Map<String, dynamic> verifiedProviderUserJson = {
     'id': providerId,
     'email': 'partner@unimove.vn',
     'full_name': 'Minh Quân',
     'role': 'provider',
     'business_name': 'Nhà xe Minh Quân',
-    'phone': '0905 123 456',
+    'phone': '0903 456 789',
     'vehicle_type': 'medium_truck',
+    'vehicle_size': 'medium_truck',
+    'vehicle_model': 'Hyundai Porter 1.5 tấn',
+    'license_plate': '51C-123.45',
     'service_area': ['Quận Ngũ Hành Sơn', 'Quận Hải Châu', 'Quận Thanh Khê'],
+    'address': '45 Đường số 10, KDC Him Lam',
+    'city': 'Đà Nẵng',
+    'bio': 'Chuyên chuyển phòng sinh viên & C2C pass đồ. Đội xe 3 tải, bốc xếp có bảo hiểm.',
     'is_verified': true,
     'is_available': true,
     'rating': 4.9,
-    'total_reviews': 87,
+    'total_reviews': 128,
     'total_orders': 143,
-    'completed_orders': 138,
+    'completed_orders': 342,
+    'completed_trips': 342,
     'base_price': 150000,
     'price_per_km': 12000,
+    'member_since': '2024-03-15T00:00:00.000Z',
   };
+
+  /// Alias — luôn trỏ tới provider đã duyệt KYC.
+  static const Map<String, dynamic> userJson = verifiedProviderUserJson;
 
   static final ProviderProfile profile = ProviderProfile.fromJson(userJson);
 
-  /// Tên khách theo id (hiển thị ở chi tiết đơn / tin nhắn).
   static const Map<String, String> customerNames = {
     'c1000000-0000-4000-8000-000000000001': 'Lê Nhật Nam',
     'c1000000-0000-4000-8000-000000000002': 'Trần Thu Hà',
     'c1000000-0000-4000-8000-000000000003': 'Phạm Minh Đức',
   };
 
-  /// Danh sách đơn — **mutable** để demo nhận/từ chối cập nhật trực tiếp.
+  static String customerNameOf(String? id) => customerNames[id] ?? 'Khách UniMove';
+
+  /// Thread chat theo đơn (ưu tiên đơn đang mở).
+  static String? chatThreadIdForOrder(String orderId) => 'order-$orderId';
+
   static final List<ProviderOrder> orders = [
     ProviderOrder(
       id: 'a1000000-0000-4000-8000-000000000001',
@@ -46,7 +61,7 @@ abstract final class MockProviderData {
       serviceType: 'standard',
       vehicleSize: 'medium_truck',
       customerId: 'c1000000-0000-4000-8000-000000000001',
-      createdAt: DateTime.now().subtract(const Duration(minutes: 8)),
+      createdAt: DateTime(2026, 6, 9, 14, 0),
       distanceKm: 8,
       etaMinutes: 25,
       itemSummary: '3 thùng carton, 1 tủ lạnh nhỏ',
@@ -61,7 +76,7 @@ abstract final class MockProviderData {
       serviceType: 'standard',
       vehicleSize: 'small_truck',
       customerId: 'c1000000-0000-4000-8000-000000000003',
-      createdAt: DateTime.now().subtract(const Duration(minutes: 21)),
+      createdAt: DateTime(2026, 6, 9, 13, 40),
       distanceKm: 5.2,
       etaMinutes: 18,
       itemSummary: '5 thùng đồ, 1 kệ sách',
@@ -76,7 +91,7 @@ abstract final class MockProviderData {
       serviceType: 'premium',
       vehicleSize: 'large_truck',
       customerId: 'c1000000-0000-4000-8000-000000000002',
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+      createdAt: DateTime(2026, 6, 9, 10, 0),
     ),
     ProviderOrder(
       id: 'a1000000-0000-4000-8000-000000000003',
@@ -88,7 +103,7 @@ abstract final class MockProviderData {
       serviceType: 'standard',
       vehicleSize: 'small_truck',
       customerId: 'c1000000-0000-4000-8000-000000000003',
-      createdAt: DateTime.now().subtract(const Duration(hours: 5)),
+      createdAt: DateTime(2026, 6, 9, 8, 0),
     ),
     ProviderOrder(
       id: 'a1000000-0000-4000-8000-000000000004',
@@ -100,7 +115,7 @@ abstract final class MockProviderData {
       serviceType: 'standard',
       vehicleSize: 'medium_truck',
       customerId: 'c1000000-0000-4000-8000-000000000001',
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
+      createdAt: DateTime(2026, 6, 8, 9, 0),
     ),
     ProviderOrder(
       id: 'a1000000-0000-4000-8000-000000000006',
@@ -112,7 +127,7 @@ abstract final class MockProviderData {
       serviceType: 'premium',
       vehicleSize: 'large_truck',
       customerId: 'c1000000-0000-4000-8000-000000000002',
-      createdAt: DateTime.now().subtract(const Duration(days: 3)),
+      createdAt: DateTime(2026, 6, 6, 15, 0),
     ),
     ProviderOrder(
       id: 'a1000000-0000-4000-8000-000000000007',
@@ -124,7 +139,7 @@ abstract final class MockProviderData {
       serviceType: 'standard',
       vehicleSize: 'small_truck',
       customerId: 'c1000000-0000-4000-8000-000000000003',
-      createdAt: DateTime.now().subtract(const Duration(days: 6)),
+      createdAt: DateTime(2026, 6, 3, 10, 0),
     ),
     ProviderOrder(
       id: 'a1000000-0000-4000-8000-000000000008',
@@ -136,7 +151,7 @@ abstract final class MockProviderData {
       serviceType: 'standard',
       vehicleSize: 'medium_truck',
       customerId: 'c1000000-0000-4000-8000-000000000001',
-      createdAt: DateTime.now().subtract(const Duration(days: 4)),
+      createdAt: DateTime(2026, 6, 5, 11, 0),
       cancellationReason: 'Không còn slot trong khung giờ',
     ),
     ProviderOrder(
@@ -149,13 +164,11 @@ abstract final class MockProviderData {
       serviceType: 'standard',
       vehicleSize: 'small_truck',
       customerId: 'c1000000-0000-4000-8000-000000000002',
-      createdAt: DateTime.now().subtract(const Duration(days: 8)),
+      createdAt: DateTime(2026, 6, 1, 16, 0),
       cancellationReason: 'Khách hủy đơn',
-      cancelledAt: DateTime.now().subtract(const Duration(days: 7, hours: 20)),
+      cancelledAt: DateTime(2026, 6, 2, 8, 0),
     ),
   ];
-
-  static String customerNameOf(String? id) => customerNames[id] ?? 'Khách UniMove';
 
   static ProviderOrder? orderById(String id) {
     try {
@@ -333,7 +346,6 @@ abstract final class MockProviderData {
   }
 
   // ----- Giấy tờ demo -----
-  /// (tiêu đề, yêu cầu, trạng thái: verified | pending | missing)
   static const List<({String title, String requirement, String status})> documents = [
     (title: 'Giấy phép lái xe', requirement: 'Bắt buộc', status: 'verified'),
     (title: 'Đăng ký phương tiện', requirement: 'Bắt buộc', status: 'verified'),

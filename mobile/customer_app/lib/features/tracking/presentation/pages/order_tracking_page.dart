@@ -1,11 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../core/constants/app_images.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/pressable_scale.dart';
@@ -76,76 +74,8 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
       ),
       body: Column(
         children: [
+          _StatusHero(snapshot: t, colors: c),
           Expanded(
-            flex: 45,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CachedNetworkImage(
-                  imageUrl: AppImages.mapPreview,
-                  fit: BoxFit.cover,
-                  memCacheWidth: 900,
-                ),
-                Positioned(
-                  top: 16.h,
-                  left: 16.w,
-                  right: 16.w,
-                  child: UniSurfaceCard(
-                    padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
-                    child: Row(
-                      children: [
-                        Icon(Icons.schedule, color: c.primary, size: 20.sp),
-                        SizedBox(width: 10.w),
-                        Expanded(
-                          child: RichText(
-                            text: TextSpan(
-                              style: TextStyle(fontSize: 13.sp, color: c.onSurface),
-                              children: [
-                                const TextSpan(text: 'Dự kiến đến trong '),
-                                TextSpan(
-                                  text: '${t.etaMinutes} phút',
-                                  style: TextStyle(fontWeight: FontWeight.w800, color: c.primary),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Text(
-                          'Khoảng cách ${t.distanceKm} km',
-                          style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted),
-                        ),
-                      ],
-                    ),
-                  ).animate().fadeIn(duration: 300.ms),
-                ),
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.local_shipping_rounded, color: c.primary, size: 36.sp),
-                      SizedBox(height: 6.h),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-                        decoration: BoxDecoration(
-                          color: c.surface,
-                          borderRadius: BorderRadius.circular(8.r),
-                          boxShadow: [
-                            BoxShadow(color: c.navBarShadow, blurRadius: 8, offset: const Offset(0, 2)),
-                          ],
-                        ),
-                        child: Text(
-                          '${order.providerName ?? 'Tài xế'} is here',
-                          style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 55,
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
@@ -161,7 +91,7 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
                   Row(
                     children: [
                       Text(
-                        'Tài xế đang đến',
+                        _statusTitle(t.statusLabel),
                         style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.w800, color: c.onSurface),
                       ),
                       const Spacer(),
@@ -170,7 +100,12 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
                       ),
                     ],
                   ),
-                  SizedBox(height: 20.h),
+                  SizedBox(height: 8.h),
+                  Text(
+                    'Theo dõi qua trạng thái đơn — không cần bản đồ realtime',
+                    style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
+                  ),
+                  SizedBox(height: 16.h),
                   _TrackingStepper(steps: t.steps, colors: c),
                   SizedBox(height: 20.h),
                   UniSurfaceCard(
@@ -270,6 +205,12 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
     );
   }
 
+  static String _statusTitle(String label) {
+    if (label.contains('Chờ') || label.contains('Đã đặt')) return 'Theo dõi đơn hàng';
+    if (label.contains('nhận') || label.contains('chốt')) return 'Đã chốt giá';
+    return 'Tiến độ chuyển trọ';
+  }
+
   Widget _actionBtn(IconData icon, String label, Color bg, Color fg, {bool outlined = false}) {
     return Container(
       height: 48.h,
@@ -285,6 +226,71 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
           Icon(icon, color: fg, size: 20.sp),
           SizedBox(width: 8.w),
           Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 14.sp)),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusHero extends StatelessWidget {
+  const _StatusHero({required this.snapshot, required this.colors});
+
+  final TrackingSnapshot snapshot;
+  final UniMoveColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final order = snapshot.order;
+    final isPending = snapshot.statusLabel.contains('Chờ') || order.status.dbValue == 'pending';
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 24.h),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [c.primaryContainer, c.surface],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            isPending ? Icons.hourglass_top_rounded : Icons.local_shipping_outlined,
+            size: 48.sp,
+            color: c.primary,
+          ).animate().fadeIn(duration: 300.ms),
+          SizedBox(height: 12.h),
+          Text(
+            snapshot.statusLabel,
+            style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w800, color: c.onSurface),
+          ),
+          SizedBox(height: 6.h),
+          Text(
+            isPending
+                ? 'Đội vận hành đang xem yêu cầu và báo giá'
+                : '${order.providerName ?? 'Nhà xe'} · ${order.vehicleLabel}',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13.sp, color: c.onSurfaceMuted),
+          ),
+          if (!isPending && snapshot.etaMinutes > 0) ...[
+            SizedBox(height: 10.h),
+            UniSurfaceCard(
+              padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.schedule, color: c.primary, size: 18.sp),
+                  SizedBox(width: 8.w),
+                  Text(
+                    'Dự kiến ~${snapshot.etaMinutes} phút',
+                    style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -350,11 +356,13 @@ class _TrackingStepper extends StatelessWidget {
               child: Icon(
                 done
                     ? Icons.check
-                    : step.key == 'coming'
-                        ? Icons.navigation_rounded
-                        : step.key == 'moving'
-                            ? Icons.local_shipping_outlined
-                            : Icons.location_on_outlined,
+                    : step.key == 'pending'
+                        ? Icons.request_quote_outlined
+                        : step.key == 'accepted'
+                            ? Icons.handshake_outlined
+                            : step.key == 'in_progress'
+                                ? Icons.local_shipping_outlined
+                                : Icons.inventory_2_outlined,
                 color: reached ? AppColors.onPrimary : colors.onSurfaceMuted,
                 size: 16.sp,
               ),

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../core/auth/auth_token_storage.dart';
+import '../../../../core/dev/dev_session_bootstrap.dart';
 import '../../../../core/services/onboarding_prefs.dart';
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/dark_glass_background.dart';
@@ -36,6 +37,8 @@ class _SplashPageState extends State<SplashPage> {
     await Future<void>.delayed(_minSplashDuration);
     if (!mounted || _navigated) return;
     _navigated = true;
+
+    await DevSessionBootstrap.apply();
 
     final hasSession = await AuthTokenStorage.instance.hasSession();
     if (hasSession) {

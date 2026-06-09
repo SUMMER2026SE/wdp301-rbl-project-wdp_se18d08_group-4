@@ -148,7 +148,7 @@ class BookingMockRepository {
   Future<List<PartnerOffer>> fetchPartners() async {
     await Future<void>.delayed(const Duration(milliseconds: 220));
     return [
-      PartnerOffer(
+      const PartnerOffer(
         id: 'p1',
         name: 'Minh Quân Logistics',
         distanceKm: 1.2,
@@ -177,9 +177,23 @@ class BookingMockRepository {
             comment: 'Di chuyển nhanh, không phát sinh phí ngoài.',
             timeAgoLabel: '2 tuần trước',
           ),
+          ProviderReview(
+            author: 'Đức H.',
+            rating: 5.0,
+            comment:
+                'Chuyển từ KTX lên trọ mới, đồ khá nhiều nhưng team bốc xếp rất cẩn thận. '
+                'Báo giá trên app khớp với thực tế, phụ phí tầng và hẻm được giải thích rõ trước khi chốt.',
+            timeAgoLabel: '3 tuần trước',
+          ),
+          ProviderReview(
+            author: 'Lan P.',
+            rating: 4.8,
+            comment: 'Tài xế gọi trước 30 phút, đến đúng giờ. Máy giặt và tủ quần áo được bọc kỹ.',
+            timeAgoLabel: '1 tháng trước',
+          ),
         ],
       ),
-      PartnerOffer(
+      const PartnerOffer(
         id: 'p2',
         name: 'FastMove SV',
         distanceKm: 2.4,
@@ -208,9 +222,17 @@ class BookingMockRepository {
             comment: 'Tư vấn rõ ràng trước khi chốt đơn.',
             timeAgoLabel: '10 ngày trước',
           ),
+          ProviderReview(
+            author: 'Vy T.',
+            rating: 4.5,
+            comment:
+                'Giá rẻ hơn vài nhà xe khác. Hẻm hơi hẹp nên phải khuân bộ một đoạn nhưng '
+                'đã báo phụ phí từ đầu nên mình thấy ổn. Nhìn chung phù hợp sinh viên.',
+            timeAgoLabel: '2 tuần trước',
+          ),
         ],
       ),
-      PartnerOffer(
+      const PartnerOffer(
         id: 'p3',
         name: 'GreenLine Moving',
         distanceKm: 3.1,
@@ -238,6 +260,14 @@ class BookingMockRepository {
             rating: 4.8,
             comment: 'Tổng thể dịch vụ tốt, đáng tiền.',
             timeAgoLabel: '9 ngày trước',
+          ),
+          ProviderReview(
+            author: 'Khoa N.',
+            rating: 4.9,
+            comment:
+                'Xe lớn nên chở được full đồ phòng trọ một chuyến. Đánh giá chi tiết từng khoản phụ phí '
+                'giúp mình so sánh dễ hơn các bên khác. Sẽ dùng lại lần sau.',
+            timeAgoLabel: '2 tuần trước',
           ),
         ],
       ),

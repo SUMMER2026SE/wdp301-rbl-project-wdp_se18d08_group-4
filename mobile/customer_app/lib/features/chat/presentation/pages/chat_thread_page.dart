@@ -132,6 +132,8 @@ class _ChatThreadPageState extends State<ChatThreadPage> {
 
               readOnly: !canSend,
 
+              readOnlyHint: ActiveChatContext.chatBlockReason(chat.order),
+
             ),
 
           ),

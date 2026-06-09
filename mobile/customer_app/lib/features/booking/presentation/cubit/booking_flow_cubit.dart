@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../orders/domain/order_models.dart';
+import '../../data/booking_media_repository.dart';
 import '../../data/booking_mock_repository.dart';
+import '../../data/quote_progress_repository.dart';
 import '../../data/labor_repository.dart';
 import '../../data/providers_repository.dart';
 import '../../../orders/data/customer_orders_repository.dart';
@@ -16,16 +18,24 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
     LaborRepository? laborRepository,
     ProvidersRepository? providersRepository,
     CustomerOrdersRepository? ordersRepository,
+    BookingMediaRepository? mediaRepository,
+    QuoteProgressRepository? quoteProgressRepository,
   })  : _repo = repository ?? BookingMockRepository(),
         _laborRepo = laborRepository ?? LaborRepository(),
         _providersRepo = providersRepository ?? ProvidersRepository(),
         _ordersRepo = ordersRepository ?? CustomerOrdersRepository(),
+        _mediaRepo = mediaRepository ?? BookingMediaRepository(),
+        _quoteRepo = quoteProgressRepository ?? QuoteProgressRepository.instance,
         super(const BookingFlowState());
 
   final BookingMockRepository _repo;
   final LaborRepository _laborRepo;
   final ProvidersRepository _providersRepo;
   final CustomerOrdersRepository _ordersRepo;
+  final BookingMediaRepository _mediaRepo;
+  final QuoteProgressRepository _quoteRepo;
+
+  static const maxImagesPerSection = 3;
 
   Future<void> loadPlaces() async {
     if (state.recentPlaces.isNotEmpty) return;
@@ -215,4 +225,70 @@ class BookingFlowCubit extends Cubit<BookingFlowState> {
   }
 
   void setLaborNote(String note) => emit(state.copyWith(laborNote: note));
+
+  void setPickupFloor(int floor) => emit(state.copyWith(pickupFloor: floor.clamp(0, 30)));
+
+  void setPickupHasElevator(bool value) => emit(state.copyWith(pickupHasElevator: value));
+
+  void setPickupAlley(AlleyAccess access) => emit(state.copyWith(pickupAlleyAccess: access));
+
+  void setDestinationAlley(AlleyAccess access) =>
+      emit(state.copyWith(destinationAlleyAccess: access));
+
+  void setCargoVolume(CargoVolume volume) => emit(state.copyWith(cargoVolume: volume));
+
+  void setDormNote(String note) => emit(state.copyWith(dormNote: note));
+
+  void addSectionImage(DormPhotoSection section, String path) {
+    final current = state.dormImagePathsFor(section);
+    if (current.length >= maxImagesPerSection) return;
+    final next = [...current, path];
+    emit(_copyWithSectionImages(section, next));
+  }
+
+  void removeSectionImage(DormPhotoSection section, int index) {
+    final current = state.dormImagePathsFor(section);
+    if (index < 0 || index >= current.length) return;
+    final next = [...current]..removeAt(index);
+    emit(_copyWithSectionImages(section, next));
+  }
+
+  BookingFlowState _copyWithSectionImages(DormPhotoSection section, List<String> paths) {
+    return switch (section) {
+      DormPhotoSection.pickupAlley => state.copyWith(pickupAlleyImagePaths: paths),
+      DormPhotoSection.destinationAlley => state.copyWith(destinationAlleyImagePaths: paths),
+      DormPhotoSection.pickupStairs => state.copyWith(pickupStairImagePaths: paths),
+      DormPhotoSection.destinationStairs => state.copyWith(destinationStairImagePaths: paths),
+      DormPhotoSection.cargo => state.copyWith(cargoImagePaths: paths),
+    };
+  }
+
+  /// Gửi yêu cầu báo giá — upload ảnh (nếu có) rồi trả mã tham chiếu.
+  Future<QuoteSubmitResult> submitQuoteRequest() async {
+    final urls = <String>[];
+    var photoUploadFailed = false;
+
+    for (final path in state.activeDormImagePaths) {
+      try {
+        urls.add(await _mediaRepo.uploadDormPhoto(filePath: path));
+      } catch (_) {
+        photoUploadFailed = true;
+      }
+    }
+
+    if (urls.isNotEmpty) {
+      emit(state.copyWith(dormImageUrls: urls));
+    }
+    if (state.activeDormImagePaths.isNotEmpty && urls.isEmpty) {
+      photoUploadFailed = true;
+    }
+
+    final ref = 'QR-${DateTime.now().millisecondsSinceEpoch.remainder(1000000)}';
+    await _quoteRepo.createFromBooking(
+      referenceId: ref,
+      state: state,
+      imageUrls: urls,
+    );
+    return QuoteSubmitResult(referenceId: ref, photoUploadFailed: photoUploadFailed);
+  }
 }

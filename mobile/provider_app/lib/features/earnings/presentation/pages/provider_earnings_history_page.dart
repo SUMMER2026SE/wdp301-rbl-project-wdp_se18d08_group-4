@@ -128,7 +128,7 @@ class _ProviderEarningsHistoryPageState extends ConsumerState<ProviderEarningsHi
                               ),
                             ),
                           ],
-                        ).animate().fadeIn(duration: 280.ms).slideY(begin: 0.06, end: 0),
+                        ),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -232,10 +232,7 @@ class _ProviderEarningsHistoryPageState extends ConsumerState<ProviderEarningsHi
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final o = history[index];
-                              return _tripTile(context, theme, c, o, index)
-                                  .animate(delay: (40 * index).ms)
-                                  .fadeIn(duration: 320.ms, curve: Curves.easeOut)
-                                  .slideX(begin: 0.04, end: 0, curve: Curves.easeOutCubic);
+                              return _tripTile(context, theme, c, o, index);
                             },
                             childCount: history.length,
                           ),

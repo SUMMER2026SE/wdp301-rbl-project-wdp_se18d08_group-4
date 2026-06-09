@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_token_storage.dart';
 import '../../../core/config/dev_config.dart';
+import '../../../core/mock/mock_auth_session.dart';
 import '../../../core/mock/mock_provider_data.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/services/auth_session_notifier.dart';
@@ -33,14 +34,9 @@ class AuthRepository {
   }
 
   Future<void> signIn({required String email, required String password}) async {
-    // Đăng nhập demo (không cần backend) — dùng dữ liệu mẫu.
-    if (DevConfig.useMockAuth &&
-        DevConfig.isDemoCredential(email: email, password: password)) {
-      await _storage.save(
-        accessToken: DevConfig.mockToken,
-        user: MockProviderData.userJson,
-      );
-      _api.setAccessToken(DevConfig.mockToken);
+    if (DevConfig.useMockAuth && DevConfig.isDemoCredential(email: email, password: password)) {
+      await MockAuthSession.signIn();
+      _api.setAccessToken(AuthTokenStorage.mockToken);
       authSessionNotifier.notifyAuthChanged();
       return;
     }

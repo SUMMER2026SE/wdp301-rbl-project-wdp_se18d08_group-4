@@ -182,3 +182,86 @@ class CargoInsurancePlan {
   final bool recommended;
   final bool isNoCoverage;
 }
+
+/// Đường vào trọ — quyết định loại xe và phụ phí có thể phát sinh.
+enum AlleyAccess {
+  truckOk,
+  smallOnly,
+  motorbikeOnly,
+  unknown;
+
+  String get label => switch (this) {
+        AlleyAccess.truckOk => 'Xe tải vào được',
+        AlleyAccess.smallOnly => 'Chỉ xe nhỏ / ba gác',
+        AlleyAccess.motorbikeOnly => 'Hẻm hẹp — chỉ xe máy',
+        AlleyAccess.unknown => 'Chưa rõ — cần ảnh',
+      };
+
+  String get hint => switch (this) {
+        AlleyAccess.truckOk => 'Đường rộng, xe tải ~1 tấn vào cổng được',
+        AlleyAccess.smallOnly => 'Hẻm vừa, ba gác hoặc xe tải nhỏ',
+        AlleyAccess.motorbikeOnly => 'Hẻm nhỏ, có thể phụ phí khuân bộ',
+        AlleyAccess.unknown => 'Nên chụp ảnh cổng hẻm khi gửi yêu cầu',
+      };
+}
+
+/// Khối lượng đồ ước tính.
+enum CargoVolume {
+  light,
+  medium,
+  heavy;
+
+  String get label => switch (this) {
+        CargoVolume.light => 'Ít đồ',
+        CargoVolume.medium => 'Vừa (phòng trọ thường)',
+        CargoVolume.heavy => 'Nhiều đồ',
+      };
+
+  String get examples => switch (this) {
+        CargoVolume.light => 'Vali, vài thùng, bàn nhỏ',
+        CargoVolume.medium => 'Giường, tủ, bếp, máy giặt',
+        CargoVolume.heavy => 'Full phòng trọ + tủ lớn',
+      };
+
+  bool get needsCargoPhoto => this != CargoVolume.light;
+}
+
+extension AlleyAccessPhoto on AlleyAccess {
+  bool get needsAlleyPhoto => this != AlleyAccess.truckOk;
+}
+
+/// Kết quả gửi yêu cầu báo giá.
+class QuoteSubmitResult {
+  const QuoteSubmitResult({
+    required this.referenceId,
+    this.photoUploadFailed = false,
+  });
+
+  final String referenceId;
+  final bool photoUploadFailed;
+}
+
+/// Nhóm ảnh theo từng mục trong form mô tả trọ.
+enum DormPhotoSection {
+  pickupAlley,
+  destinationAlley,
+  pickupStairs,
+  destinationStairs,
+  cargo;
+
+  String get label => switch (this) {
+        DormPhotoSection.pickupAlley => 'Ảnh hẻm / cổng trọ cũ',
+        DormPhotoSection.destinationAlley => 'Ảnh hẻm / cổng trọ mới',
+        DormPhotoSection.pickupStairs => 'Ảnh cầu thang trọ cũ',
+        DormPhotoSection.destinationStairs => 'Ảnh cầu thang trọ mới',
+        DormPhotoSection.cargo => 'Ảnh đồ cần chuyển',
+      };
+
+  String get hint => switch (this) {
+        DormPhotoSection.pickupAlley => 'Chụp cổng hẻm, đường vào điểm lấy đồ',
+        DormPhotoSection.destinationAlley => 'Chụp cổng hẻm, đường vào trọ mới',
+        DormPhotoSection.pickupStairs => 'Chụp cầu thang / hành lang (không có thang máy)',
+        DormPhotoSection.destinationStairs => 'Chụp cầu thang / hành lang (không có thang máy)',
+        DormPhotoSection.cargo => 'Chụp tủ, giường, đồ cồng kềnh',
+      };
+}

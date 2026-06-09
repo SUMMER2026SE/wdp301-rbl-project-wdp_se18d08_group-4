@@ -157,10 +157,12 @@ type ReviewRow = Pick<
 
 interface ReviewsTableProps {
   reviews: ReviewRow[];
+  page: number;
+  pageSize: number;
   onRefresh: () => void;
 }
 
-function ReviewsTable({ reviews, onRefresh }: ReviewsTableProps) {
+function ReviewsTable({ reviews, page, pageSize, onRefresh }: ReviewsTableProps) {
   const [hideTarget, setHideTarget] = useState<string | null>(null);
   const [flagTarget, setFlagTarget] = useState<string | null>(null);
   const [hideLoading, startHide] = useTransition();
@@ -213,7 +215,7 @@ function ReviewsTable({ reviews, onRefresh }: ReviewsTableProps) {
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border)" }}>
-              {["Khách hàng", "Nhà vận chuyển", "#Mã đơn", "Đánh giá", "Nội dung", "Trạng thái", "Ngày tạo", "Hành động"].map((h) => (
+              {["STT", "Khách hàng", "Nhà vận chuyển", "#Mã đơn", "Đánh giá", "Nội dung", "Trạng thái", "Ngày tạo", "Hành động"].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap"
@@ -225,12 +227,18 @@ function ReviewsTable({ reviews, onRefresh }: ReviewsTableProps) {
             </tr>
           </thead>
           <tbody>
-            {reviews.map((review) => (
+            {reviews.map((review, idx) => (
               <tr
                 key={review.id}
                 style={{ borderBottom: "1px solid var(--border)" }}
                 className="transition-colors hover:bg-[var(--primary-tint)]/30"
               >
+                <td
+                  className="px-4 py-3 text-center text-xs font-medium w-12"
+                  style={{ color: "var(--muted)" }}
+                >
+                  {(page - 1) * pageSize + idx + 1}
+                </td>
                 {/* Customer */}
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -368,13 +376,13 @@ interface ReviewsTabViewProps {
 
 function ReviewsTabView({ flagged, hidden }: ReviewsTabViewProps) {
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
-  const [meta, setMeta] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
+  const [meta, setMeta] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const result = await getReviews({ page, pageSize: 20, flagged, hidden });
+    const result = await getReviews({ page, pageSize: 10, flagged, hidden });
     setReviews(result.data as unknown as ReviewRow[]);
     setMeta(result.meta);
     setLoading(false);
@@ -400,15 +408,17 @@ function ReviewsTabView({ flagged, hidden }: ReviewsTabViewProps) {
           </div>
         ) : (
           <>
-            <ReviewsTable reviews={reviews} onRefresh={load} />
-            {reviews.length > 0 && (
-              <Pagination
-                page={meta.page}
-                totalPages={meta.totalPages}
-                total={meta.total}
-                pageSize={meta.pageSize}
-                onPageChange={setPage}
-              />
+            <ReviewsTable reviews={reviews} page={meta.page} pageSize={meta.pageSize} onRefresh={load} />
+            {meta.total > 0 && (
+              <div style={{ borderTop: "1px solid var(--border)" }}>
+                <Pagination
+                  page={meta.page}
+                  totalPages={meta.totalPages}
+                  total={meta.total}
+                  pageSize={meta.pageSize}
+                  onPageChange={setPage}
+                />
+              </div>
             )}
           </>
         )}

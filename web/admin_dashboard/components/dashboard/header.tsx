@@ -13,10 +13,10 @@ import {
 } from "lucide-react";
 import * as Avatar from "@radix-ui/react-avatar";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { createClient } from "@/lib/supabase/client";
 import { useSidebarStore } from "@/lib/stores/sidebar-store";
 import { useTheme } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
+import { adminApi, apiClient } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -319,7 +319,7 @@ function AdminAvatarDropdown({ profile, onLogout }: AdminAvatarDropdownProps) {
               (e.currentTarget as HTMLDivElement).style.backgroundColor = "";
               (e.currentTarget as HTMLDivElement).style.color = "var(--text)";
             }}
-            onSelect={() => router.push("/settings")}
+            onSelect={() => router.push("/profile")}
           >
             <User size={15} />
             Hồ sơ
@@ -357,86 +357,143 @@ function AdminAvatarDropdown({ profile, onLogout }: AdminAvatarDropdownProps) {
 export default function Header() {
   const router = useRouter();
   const { toggleCollapsed, setMobileOpen } = useSidebarStore();
-  const supabase = createClient();
+
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [searchValue, setSearchValue] = useState("");
 
-  // Fetch current admin profile
+  // Fetch current admin profile from API
   const fetchProfile = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const token = localStorage.getItem("admin_token");
+      if (!token) return;
 
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, full_name, avatar_url, email")
-      .eq("id", user.id)
-      .single();
+      apiClient.setToken(token);
+      const res = await adminApi.getProfile();
 
-    if (data) {
+      if (res.success && res.data) {
+        const user = res.data as AdminProfile;
+        setProfile({
+          id: user.id,
+          full_name: user.full_name ?? null,
+          avatar_url: user.avatar_url ?? null,
+          email: user.email ?? null,
+        });
+        localStorage.setItem("admin_user", JSON.stringify(res.data));
+        return;
+      }
+
+      // Fallback: localStorage
+      const userStr = localStorage.getItem("admin_user");
+      if (!userStr) return;
+      const user = JSON.parse(userStr);
       setProfile({
-        id: data.id as string,
-        full_name: (data.full_name as string | null) ?? null,
-        avatar_url: (data.avatar_url as string | null) ?? null,
+        id: user.id as string,
+        full_name: user.full_name ?? null,
+        avatar_url: user.avatar_url ?? null,
         email: user.email ?? null,
       });
+    } catch (err) {
+      console.error("Failed to fetch profile:", err);
+      const userStr = localStorage.getItem("admin_user");
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          setProfile({
+            id: user.id as string,
+            full_name: user.full_name ?? null,
+            avatar_url: user.avatar_url ?? null,
+            email: user.email ?? null,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
     }
-  }, [supabase]);
+  }, []);
 
-  // Fetch notifications
+  // Fetch notifications from API
   const fetchNotifications = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data } = await supabase
-      .from("notifications")
-      .select("id, title, body, created_at, is_read")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    if (data) {
-      const rows = data as NotificationRow[];
-      setNotifications(rows);
-      setUnreadCount(rows.filter((n) => !n.is_read).length);
+    try {
+      const response = await fetch(`${API_URL}/admin/notifications`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`
+        }
+      });
+      
+      if (!response.ok) return;
+      
+      const data = await response.json();
+      if (data.success && Array.isArray(data.data)) {
+        const rows = data.data as NotificationRow[];
+        setNotifications(rows);
+        setUnreadCount(rows.filter((n) => !n.is_read).length);
+      }
+    } catch (err) {
+      console.error('Failed to fetch notifications:', err);
     }
-  }, [supabase]);
+  }, [API_URL]);
 
   useEffect(() => {
     fetchProfile();
     fetchNotifications();
+
+    function onProfileUpdated(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setProfile({
+          id: detail.id,
+          full_name: detail.full_name ?? null,
+          avatar_url: detail.avatar_url ?? null,
+          email: detail.email ?? null,
+        });
+      } else {
+        void fetchProfile();
+      }
+    }
+
+    window.addEventListener("admin-profile-updated", onProfileUpdated);
+    return () => window.removeEventListener("admin-profile-updated", onProfileUpdated);
   }, [fetchProfile, fetchNotifications]);
 
   const handleMarkRead = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", user.id)
-      .eq("is_read", false);
-
-    setUnreadCount(0);
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-  }, [supabase]);
+    try {
+      const response = await fetch(`${API_URL}/admin/notifications/mark-read`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`
+        }
+      });
+      
+      if (response.ok) {
+        setUnreadCount(0);
+        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      }
+    } catch (err) {
+      console.error('Failed to mark notifications as read:', err);
+    }
+  }, [API_URL]);
 
   const handleLogout = useCallback(async () => {
-    await supabase.auth.signOut();
+    // Clear authentication from localStorage
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
+    
+    // Clear cookies
+    document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    document.cookie = 'admin_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    
+    // Redirect to login
     router.push("/login");
-  }, [supabase, router]);
+  }, [router]);
 
   return (
     <header
-      className="fixed top-0 right-0 left-0 z-20 flex items-center gap-3 px-4 border-b"
+      className="sticky top-0 z-20 flex items-center gap-3 px-4 border-b shrink-0"
       style={{
         height: "64px",
         backgroundColor: "var(--card)",
@@ -470,22 +527,27 @@ export default function Header() {
       </button>
 
       {/* Center: search */}
-      <div className="flex-1 flex items-center max-w-sm">
+      <div className="flex-1 flex items-center min-w-0 max-w-md">
         <div className="relative w-full">
           <span
-            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10"
             style={{ color: "var(--muted)" }}
           >
-            <Search size={15} />
+            <Search size={16} />
           </span>
           <input
             type="search"
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
-            placeholder="Tìm kiếm..."
-            className="w-full h-9 pl-9 pr-4 text-sm rounded-full border outline-none transition-colors"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && searchValue.trim()) {
+                router.push(`/orders?search=${encodeURIComponent(searchValue.trim())}`);
+              }
+            }}
+            placeholder="Tìm kiếm đơn hàng, người dùng..."
+            className="w-full h-10 pl-10 pr-4 text-sm rounded-xl border outline-none transition-all placeholder:opacity-70"
             style={{
-              backgroundColor: "var(--surface)",
+              backgroundColor: "var(--bg)",
               borderColor: "var(--border)",
               color: "var(--text)",
             }}
@@ -493,7 +555,7 @@ export default function Header() {
               (e.currentTarget as HTMLInputElement).style.borderColor =
                 "var(--primary)";
               (e.currentTarget as HTMLInputElement).style.boxShadow =
-                "0 0 0 2px var(--primary-tint)";
+                "0 0 0 3px var(--primary-tint)";
             }}
             onBlur={(e) => {
               (e.currentTarget as HTMLInputElement).style.borderColor =

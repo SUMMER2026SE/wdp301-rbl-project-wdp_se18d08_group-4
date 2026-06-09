@@ -9,7 +9,6 @@ import '../../../../core/widgets/shad_screen_scope.dart';
 import '../../data/pass_item_repository.dart';
 import '../../domain/pass_extras.dart';
 import '../../domain/pass_item.dart';
-import '../../data/pass_item_location_prefs.dart';
 import '../../domain/pass_item_provinces.dart';
 import '../pass_item_format.dart';
 import '../widgets/pass_item_image.dart';
@@ -31,24 +30,12 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
   final _descCtrl = TextEditingController();
 
   String _category = PassItemCategories.all.first;
-  String _provinceId = PassItemProvince.defaultId;
+  final String _provinceId = 'dn';
   PassItemCondition _condition = PassItemCondition.good;
-  String? _imagePath;
+  final List<String> _imagePaths = [];
   bool _free = false;
   bool _negotiable = false;
   bool _submitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProvince();
-  }
-
-  Future<void> _loadProvince() async {
-    final id = await loadPassItemsProvinceId();
-    if (!mounted) return;
-    setState(() => _provinceId = id);
-  }
 
   String get _fullArea =>
       PassItemProvince.formatArea(detail: _areaCtrl.text.trim(), provinceId: _provinceId);
@@ -63,9 +50,9 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
     super.dispose();
   }
 
-  bool get _hasImage => _imagePath != null && _imagePath!.isNotEmpty;
+  bool get _hasImage => _imagePaths.isNotEmpty;
 
-  String? get _previewImage => _imagePath;
+  String? get _previewImage => _imagePaths.isNotEmpty ? _imagePaths.first : null;
 
   bool get _valid =>
       _hasImage &&
@@ -168,10 +155,12 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
   }
 
   Future<void> _submit() async {
-    if (!_valid || _submitting || _imagePath == null) return;
+    if (!_valid || _submitting || _imagePaths.isEmpty) return;
     setState(() => _submitting = true);
     try {
-      final imageUrl = await _repo.uploadImage(filePath: _imagePath!);
+      final imageUrls = await Future.wait(
+        _imagePaths.map((p) => _repo.uploadImage(filePath: p)),
+      );
       await _repo.create(
         title: _titleCtrl.text.trim(),
         description: _descCtrl.text.trim(),
@@ -182,7 +171,7 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
         price: _free ? 0 : (int.tryParse(_priceCtrl.text.trim()) ?? 0),
         usageDuration: _usageCtrl.text.trim(),
         isNegotiable: _negotiable,
-        imageUrl: imageUrl,
+        images: imageUrls,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -239,7 +228,9 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
         imageQuality: 85,
       );
       if (picked == null) return;
-      setState(() => _imagePath = picked.path);
+      if (_imagePaths.length < 5) {
+        setState(() => _imagePaths.add(picked.path));
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,7 +239,7 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
     }
   }
 
-  void _removeImage() => setState(() => _imagePath = null);
+  void _removeImage(int index) => setState(() => _imagePaths.removeAt(index));
 
   @override
   Widget build(BuildContext context) {
@@ -333,21 +324,6 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
                 leading: Icon(LucideIcons.timer, size: 18, color: c.primary),
               ),
               const SizedBox(height: 20),
-              _sectionLabel(c, 'Tỉnh / thành phố'),
-              const SizedBox(height: 8),
-              ShadSelect<String>(
-                placeholder: const Text('Chọn tỉnh / thành phố'),
-                initialValue: _provinceId,
-                options: [
-                  for (final p in PassItemProvince.all)
-                    ShadOption(value: p.id, child: Text(p.label)),
-                ],
-                selectedOptionBuilder: (context, value) =>
-                    Text(PassItemProvince.resolve(value).label),
-                onChanged: (v) {
-                  if (v != null) setState(() => _provinceId = v);
-                },
-              ),
               const SizedBox(height: 16),
               _sectionLabel(c, 'Địa chỉ lấy đồ (quận, KTX, phường...)'),
               const SizedBox(height: 8),
@@ -433,87 +409,123 @@ class _CreatePassItemPageState extends State<CreatePassItemPage> {
   }
 
   Widget _imageUploadSection(UniMoveColors c) {
-    if (_hasImage && _previewImage != null) {
-      return Stack(
-        children: [
-          PassItemImage(
-            imageUrl: _previewImage!,
+    const maxImages = 5;
+
+    // Empty state
+    if (_imagePaths.isEmpty) {
+      return Material(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: _showImageSourceSheet,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
             width: double.infinity,
-            height: 200,
-            fit: BoxFit.cover,
-            borderRadius: BorderRadius.circular(16),
-            errorPlaceholder: Container(
-              height: 200,
-              color: c.surfaceTint,
-              child: Icon(Icons.broken_image_outlined, color: c.onSurfaceMuted, size: 40),
+            height: 160,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: c.border, width: 1.5),
             ),
-          ),
-          Positioned(
-            right: 10,
-            top: 10,
-            child: Row(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _imageActionChip(c, Icons.edit_outlined, 'Đổi ảnh', _showImageSourceSheet),
-                const SizedBox(width: 8),
-                _imageActionChip(c, Icons.close, 'Xóa', _removeImage),
+                Icon(Icons.cloud_upload_outlined, size: 40, color: c.primary),
+                const SizedBox(height: 10),
+                Text('Tải ảnh từ máy',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: c.onSurface)),
+                const SizedBox(height: 4),
+                Text('Chọn từ thư viện hoặc chụp ảnh (tối đa $maxImages ảnh)',
+                    style: TextStyle(fontSize: 12, color: c.onSurfaceMuted)),
               ],
             ),
           ),
-        ],
+        ),
       );
     }
 
-    return Material(
-      color: c.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: _showImageSourceSheet,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          width: double.infinity,
-          height: 160,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: c.border, width: 1.5),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+    // Has images — scrollable row of thumbs + add button
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
             children: [
-              Icon(Icons.cloud_upload_outlined, size: 40, color: c.primary),
-              const SizedBox(height: 10),
-              Text(
-                'Tải ảnh từ máy',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: c.onSurface),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Chọn từ thư viện hoặc chụp ảnh món đồ',
-                style: TextStyle(fontSize: 12, color: c.onSurfaceMuted),
-              ),
+              for (int i = 0; i < _imagePaths.length; i++) ...[
+                _imageThumb(c, _imagePaths[i], i),
+                const SizedBox(width: 8),
+              ],
+              if (_imagePaths.length < maxImages) _addImageBtn(c),
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          '${_imagePaths.length}/$maxImages ảnh · Ảnh đầu tiên là ảnh bìa',
+          style: TextStyle(fontSize: 11, color: c.onSurfaceMuted),
+        ),
+      ],
     );
   }
 
-  Widget _imageActionChip(UniMoveColors c, IconData icon, String label, VoidCallback onTap) {
-    return Material(
-      color: Colors.black54,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: Colors.white),
-              const SizedBox(width: 4),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
+  Widget _imageThumb(UniMoveColors c, String path, int index) {
+    return Stack(
+      children: [
+        PassItemImage(
+          imageUrl: path,
+          width: 100,
+          height: 100,
+          borderRadius: BorderRadius.circular(12),
+          fit: BoxFit.cover,
+          errorPlaceholder: Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(color: c.surfaceTint, borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.broken_image_outlined, color: c.onSurfaceMuted, size: 28),
           ),
+        ),
+        Positioned(
+          top: 4, right: 4,
+          child: GestureDetector(
+            onTap: () => _removeImage(index),
+            child: Container(
+              width: 22, height: 22,
+              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              child: const Icon(Icons.close, size: 13, color: Colors.white),
+            ),
+          ),
+        ),
+        if (index == 0)
+          Positioned(
+            bottom: 4, left: 4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+              child: const Text('Bìa', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _addImageBtn(UniMoveColors c) {
+    return GestureDetector(
+      onTap: _showImageSourceSheet,
+      child: Container(
+        width: 100,
+        height: 100,
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.border, width: 1.5),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add_photo_alternate_outlined, size: 28, color: c.primary),
+            const SizedBox(height: 4),
+            Text('Thêm ảnh', style: TextStyle(fontSize: 11, color: c.primary, fontWeight: FontWeight.w600)),
+          ],
         ),
       ),
     );

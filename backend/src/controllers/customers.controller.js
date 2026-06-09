@@ -19,20 +19,26 @@ async function patchMe(req, res, next) {
   }
 }
 
-async function uploadAvatar(req, res, next) {
+async function getRecentPlaces(req, res, next) {
   try {
-    if (!req.file) {
-      return next(httpError(400, 'Không có file được upload', 'missing_file'));
-    }
-    const data = await customersService.uploadAvatar(
-      req.user.id,
-      req.file.buffer,
-      req.file.mimetype,
-    );
+    const limit = req.query.limit;
+    const data = await customersService.getRecentPlaces(req.user.id, limit);
     res.json({ success: true, data });
   } catch (error) {
     next(error);
   }
 }
 
-module.exports = { getMe, patchMe, uploadAvatar };
+async function uploadAvatar(req, res, next) {
+  try {
+    if (!req.file) {
+      return next(httpError(400, 'Không có file được upload (field: avatar)', 'missing_file'));
+    }
+    const data = await customersService.uploadAvatar(req.user.id, req.file);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { getMe, patchMe, getRecentPlaces, uploadAvatar };

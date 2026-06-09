@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, AlertTriangle } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 export function DangerZoneSection() {
@@ -14,13 +13,19 @@ export function DangerZoneSection() {
   function handleSignOut() {
     setError(null);
     startTransition(async () => {
-      const supabase = createClient();
-      const { error: signOutError } = await supabase.auth.signOut();
-      if (signOutError) {
-        setError(signOutError.message);
-        return;
+      try {
+        // Clear JWT token and admin user from localStorage
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('admin_user');
+        
+        // Clear cookies
+        document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+        
+        // Redirect to login
+        router.push("/login");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to sign out');
       }
-      router.push("/login");
     });
   }
 

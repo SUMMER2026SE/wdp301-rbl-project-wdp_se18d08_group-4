@@ -11,12 +11,26 @@ class ActiveChatContext {
   final CustomerOrder order;
   final ChatConversation conversation;
 
-  /// Đã gán tài xế và đơn chưa kết thúc — mới được nhắn tin.
+  /// Chỉ đơn đang thực hiện (đã chốt + chưa hoàn thành) mới được nhắn tin.
   static bool orderAllowsChat(CustomerOrder order) {
     if (order.providerId == null) return false;
     return order.status == OrderStatus.accepted ||
         order.status == OrderStatus.pickingUp ||
         order.status == OrderStatus.inProgress;
+  }
+
+  /// Lý do không gửi được tin — tránh trao đổi ngoài app sau khi hoàn thành.
+  static String? chatBlockReason(CustomerOrder order) {
+    if (orderAllowsChat(order)) return null;
+    return switch (order.status) {
+      OrderStatus.completed =>
+        'Đơn đã hoàn thành — không nhắn tin thêm để bảo vệ giao dịch trên UniMove.',
+      OrderStatus.cancelled || OrderStatus.disputed =>
+        'Đơn đã kết thúc — chỉ xem lại tin nhắn.',
+      OrderStatus.pending =>
+        'Chưa chốt nhà xe — chat mở khi nhà xe xác nhận lịch.',
+      _ => 'Chat chỉ khả dụng khi đơn đang thực hiện.',
+    };
   }
 
   String get statusLabel => switch (order.status) {

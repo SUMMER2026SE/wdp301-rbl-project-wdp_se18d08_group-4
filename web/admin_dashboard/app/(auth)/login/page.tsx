@@ -3,9 +3,10 @@
 import React, { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Truck, Mail, Lock, AlertCircle } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,31 +21,45 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const supabase = createClient();
+      const response = await fetch(`${API_URL}/admin/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        signal: AbortSignal.timeout(10000),
+      });
 
-      const { data, error: signInError } =
-        await supabase.auth.signInWithPassword({ email, password });
+      const data = await response.json();
 
-      if (signInError || !data.user) {
-        setError("Sai email hoặc mật khẩu");
+      if (!response.ok || !data.success) {
+        setError(data.message || "Sai email hoặc mật khẩu");
+        setLoading(false);
         return;
       }
 
-      // Verify admin role
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", data.user.id)
-        .single();
-
-      if (!profile || (profile as { role: string }).role !== "admin") {
-        await supabase.auth.signOut();
+      if (data.data.user.role !== "admin") {
         setError("Bạn không có quyền admin");
+        setLoading(false);
         return;
       }
 
-      router.push("/dashboard");
-    } finally {
+      const token = data.data.accessToken;
+      const user = data.data.user;
+
+      // Save to localStorage for client-side API calls
+      localStorage.setItem("admin_token", token);
+      localStorage.setItem("admin_user", JSON.stringify(user));
+
+      // Save to cookie for server-side proxy/middleware
+      document.cookie = `admin_token=${token}; path=/; max-age=604800; SameSite=Lax`;
+
+      // Hard redirect so server re-reads the cookie
+      window.location.href = "/dashboard";
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message.includes("timeout")
+          ? "Kết nối quá hạn. Vui lòng kiểm tra backend đang chạy."
+          : "Không thể kết nối đến server."
+      );
       setLoading(false);
     }
   }
@@ -56,10 +71,7 @@ export default function LoginPage() {
     >
       <div
         className="w-full max-w-md rounded-2xl border p-8 shadow-lg"
-        style={{
-          backgroundColor: "var(--card)",
-          borderColor: "var(--border)",
-        }}
+        style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}
       >
         {/* Brand */}
         <div className="flex flex-col items-center gap-3 mb-8">
@@ -82,7 +94,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Error message */}
+        {/* Error */}
         {error && (
           <div className="flex items-center gap-2 mb-5 px-4 py-3 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900">
             <AlertCircle size={16} className="text-red-500 shrink-0" />
@@ -105,12 +117,10 @@ export default function LoginPage() {
               type="email"
               autoComplete="email"
               required
-              placeholder="admin@unimove.vn"
+              placeholder="admin@unimove.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              startAdornment={
-                <Mail size={15} style={{ color: "var(--muted)" }} />
-              }
+              startAdornment={<Mail size={15} style={{ color: "var(--muted)" }} />}
             />
           </div>
 
@@ -130,19 +140,12 @@ export default function LoginPage() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              startAdornment={
-                <Lock size={15} style={{ color: "var(--muted)" }} />
-              }
+              startAdornment={<Lock size={15} style={{ color: "var(--muted)" }} />}
             />
           </div>
 
           <div className="pt-2">
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full"
-              disabled={loading}
-            >
+            <Button type="submit" size="lg" className="w-full" disabled={loading}>
               {loading ? (
                 <span className="flex items-center gap-2">
                   <svg
@@ -174,11 +177,7 @@ export default function LoginPage() {
           </div>
         </form>
 
-        {/* Footer */}
-        <p
-          className="mt-6 text-center text-xs"
-          style={{ color: "var(--muted)" }}
-        >
+        <p className="text-center text-xs mt-6" style={{ color: "var(--muted)" }}>
           UniMove Admin Dashboard · Chỉ dành cho quản trị viên
         </p>
       </div>
