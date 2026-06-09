@@ -24,6 +24,7 @@ class ProviderProfile {
     this.basePrice,
     this.pricePerKm,
     this.memberSince,
+    this.status,
   });
 
   final String id;
@@ -50,6 +51,7 @@ class ProviderProfile {
   final int? basePrice;
   final int? pricePerKm;
   final DateTime? memberSince;
+  final String? status;
 
   String get displayName => businessName?.isNotEmpty == true ? businessName! : fullName;
 
@@ -96,6 +98,7 @@ class ProviderProfile {
       memberSince: json['member_since'] != null
           ? DateTime.tryParse(json['member_since'] as String)
           : null,
+      status: json['status'] as String?,
     );
   }
 
@@ -125,6 +128,7 @@ class ProviderProfile {
       basePrice: basePrice,
       pricePerKm: pricePerKm,
       memberSince: memberSince,
+      status: status,
     );
   }
 }

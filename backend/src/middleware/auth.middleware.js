@@ -37,6 +37,13 @@ async function requireAuth(req, res, next) {
 const requireNodeAuth = requireAuth;
 
 function requireRole(...roles) {
+  // Last arg may be an options object: requireRole('provider', { allowPending: true })
+  let opts = {};
+  if (roles.length > 0 && typeof roles[roles.length - 1] === 'object') {
+    opts = roles.pop();
+  }
+  const allowPending = opts.allowPending === true;
+
   return async (req, res, next) => {
     try {
       if (!req.user?.id) {
@@ -56,7 +63,8 @@ function requireRole(...roles) {
         });
       }
 
-      if (profile.status && profile.status !== 'active') {
+      const isPending = profile.status === 'pending_verification';
+      if (profile.status && profile.status !== 'active' && !(allowPending && isPending)) {
         return res.status(403).json({
           success: false,
           message: 'Tài khoản đã bị vô hiệu hóa',

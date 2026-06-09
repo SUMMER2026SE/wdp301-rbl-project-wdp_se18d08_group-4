@@ -57,7 +57,7 @@ async function findProfileByEmail(email) {
  * BE-001 — POST /api/auth/register
  */
 async function register(body) {
-  const { email, password, full_name, phone, role: roleInput, business_name } = body || {};
+  const { email, password, full_name, phone, role: roleInput, business_name, ward, address } = body || {};
   const role = roleInput === 'provider' ? 'provider' : 'customer';
 
   if (!email || !password || !full_name) {
@@ -117,6 +117,9 @@ async function register(body) {
           phone: normalizedPhone,
           role,
           status: role === 'provider' ? 'pending_verification' : 'active',
+          ...(ward ? { ward: String(ward).trim() } : {}),
+          ...(address ? { address: String(address).trim() } : {}),
+          ...(ward ? { city: 'Đà Nẵng' } : {}),
         },
       ])
       .select();

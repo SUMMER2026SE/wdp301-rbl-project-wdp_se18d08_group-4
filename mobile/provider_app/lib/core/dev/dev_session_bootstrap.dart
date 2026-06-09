@@ -14,7 +14,7 @@ abstract final class DevSessionBootstrap {
     if (token == null || token.isEmpty) return;
     if (await storage.isMockSession()) {
       ApiClient.instance.setAccessToken(AuthTokenStorage.mockToken);
-      await ProviderDocumentsRepository().seedVerifiedDemoProvider();
+      await ProviderDocumentsRepository.seedDemo();
       return;
     }
 

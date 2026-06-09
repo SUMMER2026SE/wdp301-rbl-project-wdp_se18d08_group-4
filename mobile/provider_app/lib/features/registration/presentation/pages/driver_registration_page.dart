@@ -8,6 +8,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../core/auth/auth_token_storage.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/auth_session_notifier.dart';
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/dark_glass_background.dart';
 import '../../../../core/widgets/shad_screen_scope.dart';
@@ -38,7 +39,8 @@ class DriverRegistrationPage extends ConsumerStatefulWidget {
 }
 
 class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage> {
-  static const _stepLabels = ['Thông tin cá nhân', 'Chi tiết phương tiện', 'Tải lên hồ sơ', 'Hoàn tất'];
+  static const _stepLabels = ['Chi tiết phương tiện', 'Tải lên hồ sơ', 'Hoàn tất'];
+  static const _allSteps   = ['Đăng ký đối tác', 'Chi tiết phương tiện', 'Tải lên hồ sơ'];
 
   final _picker = ImagePicker();
 
@@ -47,13 +49,7 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
   String _uploadStatus = '';
   String? _error;
 
-  // Step 0 — personal
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _addressCtrl = TextEditingController();
-
-  // Step 1 — vehicle
+  // Step 0 — vehicle
   _VehicleType? _vehicle;
   final _plateCtrl = TextEditingController();
   XFile? _vehiclePhotoFile;
@@ -62,6 +58,8 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
   // Step 2 — documents
   XFile? _idFrontFile;
   Uint8List? _idFrontPreview;
+  XFile? _idBackFile;
+  Uint8List? _idBackPreview;
   XFile? _licenseFrontFile;
   Uint8List? _licenseFrontPreview;
   XFile? _licenseBackFile;
@@ -70,27 +68,7 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
   Uint8List? _registrationPreview;
 
   @override
-  void initState() {
-    super.initState();
-    _prefillFromProfile();
-  }
-
-  Future<void> _prefillFromProfile() async {
-    try {
-      final profile = await ref.read(providerProfileRepositoryProvider).fetchProfile();
-      if (!mounted) return;
-      if (_nameCtrl.text.isEmpty && profile.fullName.isNotEmpty) _nameCtrl.text = profile.fullName;
-      if (_emailCtrl.text.isEmpty && profile.email.isNotEmpty) _emailCtrl.text = profile.email;
-      if (_phoneCtrl.text.isEmpty && profile.phone != null) _phoneCtrl.text = profile.phone!;
-    } catch (_) {}
-  }
-
-  @override
   void dispose() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    _emailCtrl.dispose();
-    _addressCtrl.dispose();
     _plateCtrl.dispose();
     super.dispose();
   }
@@ -113,6 +91,9 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
           case 'cccd_front':
             _idFrontFile = file;
             _idFrontPreview = bytes;
+          case 'cccd_back':
+            _idBackFile = file;
+            _idBackPreview = bytes;
           case 'license_front':
             _licenseFrontFile = file;
             _licenseFrontPreview = bytes;
@@ -182,17 +163,12 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
 
   // ── Navigation ────────────────────────────────────────────────────────────
 
-  bool get _isLastInputStep => _step == 2;
+  bool get _isLastInputStep => _step == 1;
 
   Future<void> _next() async {
     setState(() => _error = null);
 
     if (_step == 0) {
-      if (_nameCtrl.text.trim().isEmpty || _phoneCtrl.text.trim().isEmpty) {
-        setState(() => _error = 'Vui lòng nhập họ tên và số điện thoại.');
-        return;
-      }
-    } else if (_step == 1) {
       if (_vehicle == null) {
         setState(() => _error = 'Vui lòng chọn loại xe.');
         return;
@@ -201,9 +177,9 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
         setState(() => _error = 'Vui lòng nhập biển số xe.');
         return;
       }
-    } else if (_step == 2) {
-      if (_idFrontFile == null || _licenseFrontFile == null || _licenseBackFile == null) {
-        setState(() => _error = 'Cần tải lên CCCD và bằng lái (2 mặt).');
+    } else if (_step == 1) {
+      if (_idFrontFile == null || _idBackFile == null || _licenseFrontFile == null || _licenseBackFile == null) {
+        setState(() => _error = 'Cần tải lên CCCD (2 mặt) và bằng lái (2 mặt).');
         return;
       }
       await _submitRegistration();
@@ -221,13 +197,13 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
 
       if (!isMock) {
         await repo.updateProfile(
-          phone: _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
           vehicleType: _vehicle?.apiValue,
           basePrice: _vehicle?.defaultBasePrice,
         );
 
         final docs = <(XFile, String)>[
           if (_idFrontFile != null) (_idFrontFile!, 'cccd_front'),
+          if (_idBackFile != null) (_idBackFile!, 'cccd_back'),
           if (_licenseFrontFile != null) (_licenseFrontFile!, 'license_front'),
           if (_licenseBackFile != null) (_licenseBackFile!, 'license_back'),
           if (_registrationFile != null) (_registrationFile!, 'vehicle_registration'),
@@ -268,8 +244,8 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
   }
 
   void _goHome() {
-    final hasSession = AuthTokenStorage.instance.cachedToken?.isNotEmpty == true;
-    context.go(hasSession ? '/home' : '/login');
+    authSessionNotifier.notifyAuthChanged();
+    context.go('/pending');
   }
 
   void _onCheckStatus() {
@@ -293,7 +269,7 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
             children: [
               const DarkGlassBackground(variant: DarkGlassVariant.subtle),
               SafeArea(
-                child: _step == 3
+                child: _step == 2
                     ? _PendingView(onCheck: _onCheckStatus, onHome: _goHome)
                     : Column(
                         children: [
@@ -303,9 +279,8 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
                             child: ListView(
                               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                               children: [
-                                if (_step == 0) ..._personalStep(theme, c),
-                                if (_step == 1) ..._vehicleStep(theme, c),
-                                if (_step == 2) ..._documentsStep(theme, c),
+                                if (_step == 0) ..._vehicleStep(theme, c),
+                                if (_step == 1) ..._documentsStep(theme, c),
                                 if (_error != null) ...[
                                   const SizedBox(height: 16),
                                   _errorBox(theme, c, _error!),
@@ -344,7 +319,12 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
   }
 
   Widget _progress(ShadThemeData theme, UniMoveColors c) {
-    final pct = (_step + 1) / 4;
+    // Bước 1 "Đăng ký đối tác" luôn done khi vào trang này
+    // _step 0 → Bước 2 "Chi tiết phương tiện"
+    // _step 1 → Bước 3 "Tải lên hồ sơ"
+    final overallStep = _step + 2;
+    final pct = overallStep / 3;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
       child: Column(
@@ -353,7 +333,7 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
           Row(
             children: [
               Text(
-                'BƯỚC ${_step + 1} TRÊN 4',
+                'BƯỚC $overallStep TRÊN 3',
                 style: theme.textTheme.small.copyWith(
                   color: c.onSurfaceMuted, fontWeight: FontWeight.w700, letterSpacing: 0.5,
                 ),
@@ -370,12 +350,62 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
             _stepLabels[_step],
             style: theme.textTheme.h3.copyWith(fontWeight: FontWeight.w800, color: c.onSurface),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
+          // Visual stepper
+          Row(
+            children: [
+              for (var i = 0; i < _allSteps.length; i++) ...[
+                if (i > 0)
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      margin: const EdgeInsets.only(bottom: 18),
+                      color: i <= _step + 1 ? c.primary : c.border,
+                    ),
+                  ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i <= _step + 1 ? c.primary : c.border,
+                        ),
+                        child: i < _step + 1
+                            ? const Icon(LucideIcons.check, size: 14, color: Colors.white)
+                            : Text(
+                                '${i + 1}',
+                                style: theme.textTheme.small.copyWith(
+                                  color: i == _step + 1 ? Colors.white : c.onSurfaceMuted,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _allSteps[i],
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.small.copyWith(
+                          fontSize: 10,
+                          color: i <= _step + 1 ? c.onSurface : c.onSurfaceMuted,
+                          fontWeight: i == _step + 1 ? FontWeight.w700 : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: LinearProgressIndicator(
               value: pct,
-              minHeight: 6,
+              minHeight: 5,
               backgroundColor: c.border,
               valueColor: AlwaysStoppedAnimation(c.primary),
             ),
@@ -385,97 +415,7 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
     );
   }
 
-  // ── Step 0: personal ─────────────────────────────────────────────────────
-
-  List<Widget> _personalStep(ShadThemeData theme, UniMoveColors c) {
-    return [
-      Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [c.primary, c.primaryLight],
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Bắt đầu hành trình của bạn',
-                      style: theme.textTheme.p.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Cung cấp thông tin cơ bản để chúng tôi xác thực hồ sơ đối tác.',
-                    style: theme.textTheme.small.copyWith(color: Colors.white70, height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(LucideIcons.contact, color: Colors.white, size: 28),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 20),
-      _field(theme, c, 'Họ và tên', _nameCtrl, 'Nguyễn Văn A', LucideIcons.user),
-      const SizedBox(height: 16),
-      _field(theme, c, 'Số điện thoại', _phoneCtrl, '0901 234 567', LucideIcons.phone,
-          keyboard: TextInputType.phone),
-      const SizedBox(height: 16),
-      _field(theme, c, 'Địa chỉ Email', _emailCtrl, 'email@vi-du.com', LucideIcons.mail,
-          keyboard: TextInputType.emailAddress),
-      const SizedBox(height: 16),
-      _field(theme, c, 'Địa chỉ thường trú', _addressCtrl,
-          'Số nhà, đường, Quận/Huyện, Tỉnh/TP', LucideIcons.mapPin, maxLines: 2),
-      const SizedBox(height: 20),
-      _securityNote(theme, c),
-    ];
-  }
-
-  Widget _securityNote(ShadThemeData theme, UniMoveColors c) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.surfaceHigh,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.border),
-      ),
-      child: Row(
-        children: [
-          Icon(LucideIcons.shieldCheck, color: c.success, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Cam kết bảo mật',
-                    style: theme.textTheme.small.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
-                const SizedBox(height: 2),
-                Text(
-                  'Thông tin được mã hoá, chỉ dùng cho mục đích xác thực đối tác.',
-                  style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted, height: 1.4),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Step 1: vehicle ──────────────────────────────────────────────────────
+  // ── Step 0: vehicle ──────────────────────────────────────────────────────
 
   List<Widget> _vehicleStep(ShadThemeData theme, UniMoveColors c) {
     return [
@@ -553,7 +493,7 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
     );
   }
 
-  // ── Step 2: documents ────────────────────────────────────────────────────
+  // ── Step 1: documents ────────────────────────────────────────────────────
 
   List<Widget> _documentsStep(ShadThemeData theme, UniMoveColors c) {
     return [
@@ -569,6 +509,14 @@ class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage>
         file: _idFrontFile,
         preview: _idFrontPreview,
         onTap: () => _pickImage('cccd_front'),
+      ),
+      const SizedBox(height: 10),
+      _uploadBox(theme, c,
+        title: 'Mặt sau CCCD',
+        subtitle: 'JPG, PNG, WEBP (tối đa 10MB)',
+        file: _idBackFile,
+        preview: _idBackPreview,
+        onTap: () => _pickImage('cccd_back'),
       ),
       const SizedBox(height: 20),
       Text('Bằng lái xe',

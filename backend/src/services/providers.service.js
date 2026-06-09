@@ -2,7 +2,7 @@ const { supabaseAdmin } = require('./supabase.service');
 const { uploadBuffer } = require('./cloudinary.service');
 const { httpError } = require('./auth.helpers');
 
-const VALID_DOC_TYPES = ['cccd_front', 'license_front', 'license_back', 'vehicle_registration', 'vehicle_photo'];
+const VALID_DOC_TYPES = ['cccd_front', 'cccd_back', 'license_front', 'license_back', 'vehicle_registration', 'vehicle_photo'];
 
 const PROVIDER_SELECT = `
   id,
@@ -271,10 +271,21 @@ async function updateMyProfile(providerId, payload) {
   if (payload.service_area !== undefined) ppFields.service_area = payload.service_area;
 
   if (Object.keys(ppFields).length > 1) {
-    const { error } = await supabaseAdmin
-      .from('provider_profiles')
-      .upsert(ppFields, { onConflict: 'id' });
-    if (error) throw Object.assign(new Error(error.message), { status: 400 });
+    let dbError;
+    if (ppFields.business_name !== undefined) {
+      // business_name có trong payload → upsert an toàn (tạo mới nếu chưa có)
+      ({ error: dbError } = await supabaseAdmin
+        .from('provider_profiles')
+        .upsert(ppFields, { onConflict: 'id' }));
+    } else {
+      // Không có business_name → chỉ update row đã tồn tại, tránh vi phạm NOT NULL khi INSERT
+      const { id, ...updateFields } = ppFields;
+      ({ error: dbError } = await supabaseAdmin
+        .from('provider_profiles')
+        .update(updateFields)
+        .eq('id', providerId));
+    }
+    if (dbError) throw Object.assign(new Error(dbError.message), { status: 400 });
   }
 
   return getMyProfile(providerId);
@@ -296,28 +307,47 @@ async function uploadDocument(providerId, docType, fileBuffer) {
     throw Object.assign(new Error('doc_type không hợp lệ'), { status: 400 });
   }
 
-  const { url, publicId } = await uploadBuffer(fileBuffer, {
-    folder: `unimove/provider_documents/${providerId}`,
-    public_id: docType,
-    overwrite: true,
-  });
+  console.log(`[uploadDocument] provider=${providerId} docType=${docType} bufferSize=${fileBuffer?.length}`);
+
+  let url, publicId;
+  try {
+    ({ url, publicId } = await uploadBuffer(fileBuffer, {
+      folder: `unimove/provider_documents/${providerId}`,
+      public_id: docType,
+      overwrite: true,
+    }));
+    console.log(`[uploadDocument] Cloudinary OK → ${url}`);
+  } catch (cloudErr) {
+    console.error(`[uploadDocument] Cloudinary FAILED:`, cloudErr.message);
+    throw Object.assign(new Error(`Cloudinary upload failed: ${cloudErr.message}`), { status: 502 });
+  }
 
   const { error } = await supabaseAdmin
     .from('provider_documents')
     .upsert(
-      { provider_id: providerId, doc_type: docType, cloudinary_url: url, cloudinary_public_id: publicId, status: 'pending' },
-      { onConflict: 'provider_id,doc_type' },
+      {
+        provider_id: providerId,
+        document_type: docType,
+        document_url: url,
+        cloudinary_public_id: publicId,
+        status: 'pending',
+      },
+      { onConflict: 'provider_id,document_type' },
     );
 
-  if (error) throw Object.assign(new Error(error.message), { status: 400 });
+  if (error) {
+    console.error(`[uploadDocument] DB upsert FAILED:`, error.message);
+    throw Object.assign(new Error(error.message), { status: 400 });
+  }
 
+  console.log(`[uploadDocument] DB saved OK → ${docType}`);
   return { doc_type: docType, url, status: 'pending' };
 }
 
 async function getDocuments(providerId) {
   const { data, error } = await supabaseAdmin
     .from('provider_documents')
-    .select('doc_type, cloudinary_url, status, created_at')
+    .select('document_type, document_url, cloudinary_public_id, status, created_at')
     .eq('provider_id', providerId)
     .order('created_at', { ascending: true });
 

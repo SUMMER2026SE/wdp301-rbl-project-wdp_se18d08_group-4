@@ -12,7 +12,7 @@ abstract final class MockAuthSession {
       accessToken: AuthTokenStorage.mockToken,
       user: MockProviderData.verifiedProviderUserJson,
     );
-    await ProviderDocumentsRepository().seedVerifiedDemoProvider();
+    await ProviderDocumentsRepository.seedDemo();
     ApiClient.instance.setAccessToken(AuthTokenStorage.mockToken);
   }
 }

@@ -1,5 +1,4 @@
 import '../../features/auth/domain/provider_profile.dart';
-import '../../features/messages/domain/chat_models.dart';
 import '../../features/orders/domain/provider_order.dart';
 
 /// Dữ liệu demo cho provider (không cần backend).
@@ -274,75 +273,6 @@ abstract final class MockProviderData {
   static bool customerHasActiveTrip(String? customerId) {
     if (customerId == null) return false;
     return orders.any((o) => o.isActive && o.customerId == customerId);
-  }
-
-  // ----- Tin nhắn demo -----
-  static final List<ChatThread> chatThreads = [
-    ChatThread(
-      id: 't1',
-      name: 'Lê Nhật Nam',
-      customerId: 'c1000000-0000-4000-8000-000000000001',
-      time: '2 phút',
-      unread: true,
-      messages: [
-        ChatMessage(text: 'Chào anh, em vừa đặt chuyến chuyển trọ ạ.', fromProvider: false, time: '09:10'),
-        ChatMessage(text: 'Anh nhận đơn rồi nhé, em chuẩn bị đồ giúp anh.', fromProvider: true, time: '09:12'),
-        ChatMessage(text: 'Anh ơi tới chưa ạ? Em đợi ở cổng KTX B nhé.', fromProvider: false, time: '09:20'),
-      ],
-    ),
-    ChatThread(
-      id: 't2',
-      name: 'Trần Thu Hà',
-      customerId: 'c1000000-0000-4000-8000-000000000002',
-      time: '1 giờ',
-      unread: true,
-      messages: [
-        ChatMessage(text: 'Anh ơi đồ em hơi nhiều, có cần thêm người không?', fromProvider: false, time: '08:02'),
-        ChatMessage(text: 'Anh đi 2 người và xe lớn rồi, em yên tâm nhé.', fromProvider: true, time: '08:05'),
-        ChatMessage(text: 'Đồ em hơi nhiều, anh mang thêm dây ràng giúp em.', fromProvider: false, time: '08:30'),
-      ],
-    ),
-    ChatThread(
-      id: 't3',
-      name: 'Phạm Minh Đức',
-      customerId: 'c1000000-0000-4000-8000-000000000003',
-      time: 'Hôm qua',
-      unread: false,
-      messages: [
-        ChatMessage(text: 'Anh đang trên đường tới điểm giao nhé.', fromProvider: true, time: 'Hôm qua'),
-        ChatMessage(text: 'Dạ vâng, em đợi ở sảnh ạ.', fromProvider: false, time: 'Hôm qua'),
-        ChatMessage(text: 'Cảm ơn anh, chuyến vừa rồi nhanh gọn ạ!', fromProvider: false, time: 'Hôm qua'),
-      ],
-    ),
-    ChatThread(
-      id: 't4',
-      name: 'Hỗ trợ UniMove',
-      customerId: null,
-      time: '2 ngày',
-      unread: false,
-      messages: [
-        ChatMessage(text: 'Chào bạn, giấy tờ của bạn đã được duyệt.', fromProvider: false, time: '2 ngày trước'),
-        ChatMessage(text: 'Cảm ơn đội ngũ UniMove ạ!', fromProvider: true, time: '2 ngày trước'),
-      ],
-    ),
-  ];
-
-  static ChatThread? chatThreadById(String id) {
-    try {
-      return chatThreads.firstWhere((t) => t.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Tìm hội thoại theo khách (để mở từ chi tiết đơn).
-  static ChatThread? chatThreadByCustomer(String? customerId) {
-    if (customerId == null) return null;
-    try {
-      return chatThreads.firstWhere((t) => t.customerId == customerId);
-    } catch (_) {
-      return null;
-    }
   }
 
   // ----- Giấy tờ demo -----

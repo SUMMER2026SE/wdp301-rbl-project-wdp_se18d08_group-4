@@ -42,7 +42,13 @@ class _SplashPageState extends State<SplashPage> {
 
     final hasSession = await AuthTokenStorage.instance.hasSession();
     if (hasSession) {
-      context.go('/home');
+      final status = await AuthTokenStorage.instance.loadStatus();
+      if (!mounted) return;
+      if (status == 'pending_verification') {
+        context.go('/pending');
+      } else {
+        context.go('/home');
+      }
       return;
     }
 

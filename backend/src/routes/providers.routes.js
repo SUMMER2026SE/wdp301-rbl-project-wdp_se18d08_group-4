@@ -9,11 +9,12 @@ const router = express.Router();
 router.get('/browse', providersController.browse);
 
 // Provider self-service — /me* must come before /:id
-router.get('/me', requireAuth, requireRole('provider'), providersController.getMe);
-router.patch('/me', requireAuth, requireRole('provider'), providersController.updateMe);
+// allowPending: true → cho phép tài khoản pending_verification upload hồ sơ đăng ký
+router.get('/me', requireAuth, requireRole('provider', { allowPending: true }), providersController.getMe);
+router.patch('/me', requireAuth, requireRole('provider', { allowPending: true }), providersController.updateMe);
 router.patch('/me/status', requireAuth, requireRole('provider'), providersController.setStatus);
-router.get('/me/documents', requireAuth, requireRole('provider'), providersController.getDocuments);
-router.post('/me/documents', requireAuth, requireRole('provider'), handleDocumentUpload, providersController.uploadDocument);
+router.get('/me/documents', requireAuth, requireRole('provider', { allowPending: true }), providersController.getDocuments);
+router.post('/me/documents', requireAuth, requireRole('provider', { allowPending: true }), handleDocumentUpload, providersController.uploadDocument);
 
 // Customer-facing — /:id must be last
 router.get('/:id', requireAuth, requireRole('customer'), providersController.getById);

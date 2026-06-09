@@ -57,6 +57,9 @@ class AuthRepository {
     required String password,
     required String fullName,
     required String businessName,
+    required String phone,
+    required String ward,
+    String address = '',
   }) async {
     if (password.length < 8) {
       throw const AuthException('Mật khẩu tối thiểu 8 ký tự.');
@@ -68,12 +71,16 @@ class AuthRepository {
         'password': password,
         'full_name': fullName.trim(),
         'business_name': businessName.trim(),
+        'phone': phone.trim(),
+        'ward': ward,
+        'address': address.trim(),
         'role': 'provider',
       }),
     );
 
     await _persistAuth(envelope);
-    authSessionNotifier.notifyAuthChanged();
+    // Không notify GoRouter ở đây — để register_page tự navigate sang /driver-registration.
+    // notifyAuthChanged() sẽ được gọi sau khi hoàn tất driver registration.
   }
 
   Future<void> signOut() async {

@@ -362,6 +362,18 @@ async function verifyProvider(req, res) {
       throw error;
     }
 
+    // Cập nhật profiles.status để provider app biết được duyệt/từ chối
+    const profileStatus = action === 'approve' ? 'active' : 'rejected';
+    await supabaseAdmin.from('profiles').update({ status: profileStatus }).eq('id', id);
+
+    // Cập nhật tất cả provider_documents sang approved/rejected
+    const docStatus = action === 'approve' ? 'approved' : 'rejected';
+    await supabaseAdmin
+      .from('provider_documents')
+      .update({ status: docStatus })
+      .eq('provider_id', id)
+      .eq('status', 'pending');
+
     if (!updatedProvider) {
       return res.status(404).json({
         success: false,
