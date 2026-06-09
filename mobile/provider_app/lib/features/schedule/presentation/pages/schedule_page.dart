@@ -14,7 +14,15 @@ class SchedulePage extends StatefulWidget {
 
 class _SchedulePageState extends State<SchedulePage> {
   static const _dayLabels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
-  static const _districts = ['Quận 1', 'Quận 3', 'Quận 7', 'Quận Bình Thạnh', 'Quận Tân Bình', 'TP. Thủ Đức'];
+  static const _districts = [
+    'Quận Ngũ Hành Sơn',
+    'Quận Hải Châu',
+    'Quận Thanh Khê',
+    'Quận Sơn Trà',
+    'Quận Liên Chiểu',
+    'Quận Cẩm Lệ',
+    'Huyện Hòa Vang',
+  ];
 
   bool _online = true;
   int _selectedDay = 0;
@@ -26,7 +34,7 @@ class _SchedulePageState extends State<SchedulePage> {
         end: const TimeOfDay(hour: 17, minute: 0),
       ),
   };
-  final Set<String> _areas = {'Quận 1', 'Quận 7', 'Quận Bình Thạnh'};
+  final Set<String> _areas = {};
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +86,7 @@ class _SchedulePageState extends State<SchedulePage> {
               _dayEditor(theme, c),
               const SizedBox(height: 24),
               _sectionRow(theme, c, 'Khu vực hoạt động ưu tiên',
-                  'Chọn các quận bạn muốn tối ưu lộ trình và nhận đơn gần nhất.'),
+                  'Chọn quận tại Đà Nẵng bạn muốn nhận đơn — ưu tiên khu vực gần làng đại học.'),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 10,

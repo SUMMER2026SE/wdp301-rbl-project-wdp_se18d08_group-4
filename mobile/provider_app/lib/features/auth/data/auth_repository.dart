@@ -5,15 +5,17 @@ import '../../../core/config/dev_config.dart';
 import '../../../core/mock/mock_provider_data.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/services/auth_session_notifier.dart';
+import '../../profile/data/provider_profile_repository.dart';
 import '../domain/provider_profile.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(apiClientProvider));
 });
 
+// Lấy profile từ GET /providers/me (đầy đủ hơn /auth/me).
 final providerProfileProvider = FutureProvider<ProviderProfile?>((ref) async {
   if (!await AuthTokenStorage.instance.hasSession()) return null;
-  return ref.watch(authRepositoryProvider).fetchProfile();
+  return ref.watch(providerProfileRepositoryProvider).fetchProfile();
 });
 
 class AuthRepository {
@@ -24,13 +26,10 @@ class AuthRepository {
 
   Future<bool> get isSignedIn => _storage.hasSession();
 
-  Future<ProviderProfile?> fetchProfile() async {
-    if (await _storage.isMockSession()) {
-      return MockProviderData.profile;
-    }
+  Future<ProviderProfile?> fetchProfileFallback() async {
+    if (await _storage.isMockSession()) return MockProviderData.profile;
     final envelope = await _api.guard(() => _api.get('/auth/me'));
-    final me = Map<String, dynamic>.from(envelope['data'] as Map);
-    return ProviderProfile.fromJson(me);
+    return ProviderProfile.fromJson(Map<String, dynamic>.from(envelope['data'] as Map));
   }
 
   Future<void> signIn({required String email, required String password}) async {

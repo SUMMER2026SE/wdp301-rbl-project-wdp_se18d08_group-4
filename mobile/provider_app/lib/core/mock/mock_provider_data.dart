@@ -12,8 +12,17 @@ abstract final class MockProviderData {
     'full_name': 'Minh Quân',
     'role': 'provider',
     'business_name': 'Nhà xe Minh Quân',
+    'phone': '0905 123 456',
+    'vehicle_type': 'medium_truck',
+    'service_area': ['Quận Ngũ Hành Sơn', 'Quận Hải Châu', 'Quận Thanh Khê'],
     'is_verified': true,
+    'is_available': true,
     'rating': 4.9,
+    'total_reviews': 87,
+    'total_orders': 143,
+    'completed_orders': 138,
+    'base_price': 150000,
+    'price_per_km': 12000,
   };
 
   static final ProviderProfile profile = ProviderProfile.fromJson(userJson);

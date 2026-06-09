@@ -347,7 +347,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                       _stagger(
                                         8,
                                         GestureDetector(
-                                          onTap: () => context.push('/driver-registration'),
+                                          onTap: () => context.push('/register'),
                                           child: Text.rich(
                                             TextSpan(
                                               style: theme.textTheme.p.copyWith(

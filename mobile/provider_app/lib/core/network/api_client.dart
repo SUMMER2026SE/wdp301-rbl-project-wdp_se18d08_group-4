@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -54,6 +56,44 @@ class ApiClient {
 
   Future<Map<String, dynamic>> post(String path, {Map<String, dynamic>? body}) async {
     return _unwrap(await _dio.post<dynamic>(path, data: body));
+  }
+
+  Future<Map<String, dynamic>> patch(String path, {Map<String, dynamic>? body}) async {
+    return _unwrap(await _dio.patch<dynamic>(path, data: body));
+  }
+
+  Future<Map<String, dynamic>> delete(String path) async {
+    return _unwrap(await _dio.delete<dynamic>(path));
+  }
+
+  /// Upload file dạng multipart/form-data.
+  /// [fields] là các text fields đính kèm (ví dụ: doc_type).
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required Uint8List fileBytes,
+    required String filename,
+    required String fileField,
+    Map<String, String> fields = const {},
+  }) async {
+    final formData = FormData.fromMap({
+      ...fields,
+      fileField: MultipartFile.fromBytes(
+        fileBytes,
+        filename: filename,
+        contentType: _mediaType(filename),
+      ),
+    });
+    return _unwrap(await _dio.post<dynamic>(path, data: formData));
+  }
+
+  static DioMediaType _mediaType(String filename) {
+    final ext = filename.toLowerCase().split('.').last;
+    return switch (ext) {
+      'png' => DioMediaType('image', 'png'),
+      'webp' => DioMediaType('image', 'webp'),
+      'gif' => DioMediaType('image', 'gif'),
+      _ => DioMediaType('image', 'jpeg'),
+    };
   }
 
   Map<String, dynamic> _unwrap(Response<dynamic> response) {
