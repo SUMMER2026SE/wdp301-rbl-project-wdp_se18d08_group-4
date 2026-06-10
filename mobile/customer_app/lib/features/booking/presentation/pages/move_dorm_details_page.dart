@@ -12,7 +12,7 @@ import '../../domain/booking_models.dart';
 import '../cubit/booking_flow_cubit.dart';
 import '../cubit/booking_flow_state.dart';
 
-/// Mô tả trọ — form báo giá minh bạch, không tự động chốt giá.
+/// Mô tả trọ — đường vào, tầng, khối lượng đồ để nhà xe chuẩn bị đúng.
 class MoveDormDetailsPage extends StatefulWidget {
   const MoveDormDetailsPage({super.key});
 
@@ -21,10 +21,8 @@ class MoveDormDetailsPage extends StatefulWidget {
 }
 
 class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
-  final _picker = ImagePicker();
   late final TextEditingController _noteCtrl;
-  bool _submitting = false;
-
+  final _picker = ImagePicker();
   @override
   void initState() {
     super.initState();
@@ -36,6 +34,8 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
     _noteCtrl.dispose();
     super.dispose();
   }
+
+  String _nextRoute(BookingFlowState state) => '/booking/schedule';
 
   @override
   Widget build(BuildContext context) {
@@ -50,21 +50,38 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
           body: ListView(
             padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 120.h),
             children: [
-              _infoBanner(c),
+              _infoBanner(c, state),
               SizedBox(height: 16.h),
               _routeSummary(c, state),
               SizedBox(height: 20.h),
               _sectionTitle(c, 'Trọ cũ (điểm lấy đồ)'),
               SizedBox(height: 10.h),
-              _floorRow(c, state.pickupFloor, state.pickupHasElevator, cubit.setPickupFloor,
-                  cubit.setPickupHasElevator),
-              if (state.showPickupStairPhotos) ...[
+              _floorRow(
+                c,
+                state.pickupFloor,
+                state.pickupHasElevator,
+                cubit.setPickupFloor,
+                cubit.setPickupHasElevator,
+              ),
+              SizedBox(height: 12.h),
+              _alleyChips(c, state.pickupAlleyAccess, cubit.setPickupAlley),
+              if (DormPhotoSection.pickupStairs.isVisible(
+                pickupHasElevator: state.pickupHasElevator,
+                pickupAlley: state.pickupAlleyAccess,
+                destinationHasElevator: state.hasElevator,
+                destinationAlley: state.destinationAlleyAccess,
+                cargoVolume: state.cargoVolume,
+              )) ...[
                 SizedBox(height: 12.h),
                 _sectionPhotoUpload(c, state, cubit, DormPhotoSection.pickupStairs),
               ],
-              SizedBox(height: 12.h),
-              _alleyChips(c, state.pickupAlleyAccess, cubit.setPickupAlley),
-              if (state.showPickupAlleyPhotos) ...[
+              if (DormPhotoSection.pickupAlley.isVisible(
+                pickupHasElevator: state.pickupHasElevator,
+                pickupAlley: state.pickupAlleyAccess,
+                destinationHasElevator: state.hasElevator,
+                destinationAlley: state.destinationAlleyAccess,
+                cargoVolume: state.cargoVolume,
+              )) ...[
                 SizedBox(height: 12.h),
                 _sectionPhotoUpload(c, state, cubit, DormPhotoSection.pickupAlley),
               ],
@@ -72,13 +89,25 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
               _sectionTitle(c, 'Trọ mới (điểm giao)'),
               SizedBox(height: 10.h),
               _floorRow(c, state.floorCount, state.hasElevator, cubit.setFloorCount, cubit.setHasElevator),
-              if (state.showDestinationStairPhotos) ...[
+              SizedBox(height: 12.h),
+              _alleyChips(c, state.destinationAlleyAccess, cubit.setDestinationAlley),
+              if (DormPhotoSection.destinationStairs.isVisible(
+                pickupHasElevator: state.pickupHasElevator,
+                pickupAlley: state.pickupAlleyAccess,
+                destinationHasElevator: state.hasElevator,
+                destinationAlley: state.destinationAlleyAccess,
+                cargoVolume: state.cargoVolume,
+              )) ...[
                 SizedBox(height: 12.h),
                 _sectionPhotoUpload(c, state, cubit, DormPhotoSection.destinationStairs),
               ],
-              SizedBox(height: 12.h),
-              _alleyChips(c, state.destinationAlleyAccess, cubit.setDestinationAlley),
-              if (state.showDestinationAlleyPhotos) ...[
+              if (DormPhotoSection.destinationAlley.isVisible(
+                pickupHasElevator: state.pickupHasElevator,
+                pickupAlley: state.pickupAlleyAccess,
+                destinationHasElevator: state.hasElevator,
+                destinationAlley: state.destinationAlleyAccess,
+                cargoVolume: state.cargoVolume,
+              )) ...[
                 SizedBox(height: 12.h),
                 _sectionPhotoUpload(c, state, cubit, DormPhotoSection.destinationAlley),
               ],
@@ -86,9 +115,19 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
               _sectionTitle(c, 'Khối lượng đồ'),
               SizedBox(height: 10.h),
               _cargoChips(c, state.cargoVolume, cubit.setCargoVolume),
-              if (state.showCargoPhotos) ...[
+              if (DormPhotoSection.cargo.isVisible(
+                pickupHasElevator: state.pickupHasElevator,
+                pickupAlley: state.pickupAlleyAccess,
+                destinationHasElevator: state.hasElevator,
+                destinationAlley: state.destinationAlleyAccess,
+                cargoVolume: state.cargoVolume,
+              )) ...[
                 SizedBox(height: 12.h),
                 _sectionPhotoUpload(c, state, cubit, DormPhotoSection.cargo),
+              ],
+              if (!state.isComboBooking) ...[
+                SizedBox(height: 20.h),
+                _transportLaborSection(c, state, cubit),
               ],
               SizedBox(height: 20.h),
               _sectionTitle(c, 'Ghi chú thêm'),
@@ -98,7 +137,7 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
                 onChanged: cubit.setDormNote,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  hintText: 'VD: Có tủ lớn, máy giặt; cổng hẻm cần chụp ảnh...',
+                  hintText: 'VD: Có tủ lớn, máy giặt; cổng hẻm hẹp sau 17h...',
                   filled: true,
                   fillColor: c.surfaceTint,
                   border: OutlineInputBorder(
@@ -107,8 +146,13 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
                   ),
                 ),
               ),
-              SizedBox(height: 16.h),
-              _referenceLink(context, c),
+              if (state.dormImageCount == 0) ...[
+                SizedBox(height: 12.h),
+                Text(
+                  'Chọn hẻm hẹp, không thang máy hoặc nhiều đồ để hiện ô upload ảnh tương ứng.',
+                  style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+                ),
+              ],
             ],
           ),
           bottom: SafeArea(
@@ -118,33 +162,18 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Nhà xe báo giá trên app · So sánh & chốt minh bạch',
+                    state.isComboBooking
+                        ? 'Thông tin này gửi kèm đơn combo cho nhà xe — tránh phụ thu bất ngờ'
+                        : state.wantsTransportLabor
+                            ? 'Bước tiếp: chọn giờ — nhà xe báo giá xe + khuân vác gộp'
+                            : 'Bước tiếp: chọn giờ mong muốn — nhà xe báo giá theo khung đó',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.3),
                   ),
                   SizedBox(height: 10.h),
                   SmoothCtaButton(
-                    label: _submitting ? 'Đang gửi...' : 'Gửi yêu cầu báo giá',
-                    onPressed: _submitting
-                        ? null
-                        : () async {
-                            setState(() => _submitting = true);
-                            try {
-                              final result = await cubit.submitQuoteRequest();
-                              if (!context.mounted) return;
-                              final photosParam =
-                                  result.photoUploadFailed ? '?photos=failed' : '';
-                              context.go(
-                                '/booking/quotes/${result.referenceId}/progress$photosParam',
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              setState(() => _submitting = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Không gửi được yêu cầu: $e')),
-                              );
-                            }
-                          },
+                    label: 'Chọn ngày giờ',
+                    onPressed: () => context.push(_nextRoute(state)),
                   ),
                 ],
               ),
@@ -155,7 +184,7 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
     );
   }
 
-  Widget _infoBanner(UniMoveColors c) {
+  Widget _infoBanner(UniMoveColors c, BookingFlowState state) {
     return Container(
       padding: EdgeInsets.all(14.w),
       decoration: BoxDecoration(
@@ -166,12 +195,15 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.verified_outlined, size: 20.sp, color: c.primary),
+          Icon(Icons.info_outline, size: 20.sp, color: c.primary),
           SizedBox(width: 10.w),
           Expanded(
             child: Text(
-              'Mô tả càng rõ, báo giá càng chính xác. Các nhà xe sẽ gửi giá + '
-              'bảng phụ phí lên app để bạn so sánh và chốt.',
+              state.isComboBooking
+                  ? 'Combo niêm yết giá xe+km cố định, nhưng nhà xe vẫn cần biết đường vào trọ '
+                      'và khối lượng đồ để chuẩn bị xe & đội khuân vác.'
+                  : 'Mô tả càng rõ, nhà xe báo giá càng chính xác. '
+                      'Bật khuân vác nếu cần — nhà xe sẽ báo giá xe + người khuân gộp một lần.',
               style: TextStyle(fontSize: 12.sp, color: c.onSurface, height: 1.35),
             ),
           ),
@@ -305,6 +337,87 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
     );
   }
 
+  Widget _transportLaborSection(UniMoveColors c, BookingFlowState state, BookingFlowCubit cubit) {
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(
+          color: state.wantsTransportLabor ? c.primary.withValues(alpha: 0.4) : c.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Muốn thuê người khuân vác',
+              style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w700, color: c.onSurface),
+            ),
+            subtitle: Text(
+              'Nhà xe báo giá vận chuyển + khuân vác trong cùng một báo giá',
+              style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.3),
+            ),
+            value: state.wantsTransportLabor,
+            activeThumbColor: c.primary,
+            onChanged: cubit.setWantsTransportLabor,
+          ),
+          if (state.wantsTransportLabor) ...[
+            Divider(height: 20.h, color: c.border),
+            Text('Số người', style: TextStyle(fontSize: 14.sp, color: c.onSurfaceMuted)),
+            SizedBox(height: 8.h),
+            _counterRow(
+              c,
+              state.transportLaborHelpers,
+              'người',
+              () => cubit.setTransportLaborHelpers(state.transportLaborHelpers - 1),
+              () => cubit.setTransportLaborHelpers(state.transportLaborHelpers + 1),
+            ),
+            SizedBox(height: 14.h),
+            Text('Thời gian làm việc', style: TextStyle(fontSize: 14.sp, color: c.onSurfaceMuted)),
+            SizedBox(height: 8.h),
+            Wrap(
+              spacing: 8.w,
+              children: LaborPricing.hourOptions.map((h) {
+                final selected = state.transportLaborHours == h;
+                return ChoiceChip(
+                  label: Text('$h giờ', style: TextStyle(fontSize: 12.sp)),
+                  selected: selected,
+                  onSelected: (_) => cubit.setTransportLaborHours(h),
+                  selectedColor: c.primary,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : c.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _counterRow(
+    UniMoveColors c,
+    int value,
+    String label,
+    VoidCallback onMinus,
+    VoidCallback onPlus,
+  ) {
+    return Row(
+      children: [
+        _roundBtn(c, Icons.remove, onMinus),
+        SizedBox(width: 16.w),
+        Text('$value $label', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700)),
+        const Spacer(),
+        _roundBtn(c, Icons.add, onPlus),
+      ],
+    );
+  }
+
   Widget _cargoChips(UniMoveColors c, CargoVolume selected, void Function(CargoVolume) onSelect) {
     return Column(
       children: CargoVolume.values.map((v) {
@@ -351,7 +464,117 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
     );
   }
 
-  Future<void> _showImageSourceSheet(DormPhotoSection section) async {
+  Widget _sectionPhotoUpload(
+    UniMoveColors c,
+    BookingFlowState state,
+    BookingFlowCubit cubit,
+    DormPhotoSection section,
+  ) {
+    final paths = state.dormPhotos[section] ?? [];
+    final max = BookingFlowCubit.maxPhotosPerSection;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(12.w),
+      decoration: BoxDecoration(
+        color: c.surfaceTint,
+        borderRadius: BorderRadius.circular(12.r),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.add_photo_alternate_outlined, size: 16.sp, color: c.primary),
+              SizedBox(width: 6.w),
+              Expanded(
+                child: Text(
+                  section.label,
+                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w700, color: c.onSurface),
+                ),
+              ),
+              Text(
+                '${paths.length}/$max',
+                style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted),
+              ),
+            ],
+          ),
+          SizedBox(height: 10.h),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var i = 0; i < paths.length; i++) ...[
+                  _imageThumb(c, paths[i], section, i, cubit),
+                  SizedBox(width: 8.w),
+                ],
+                if (paths.length < max) _addImageBtn(c, section, cubit),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _imageThumb(
+    UniMoveColors c,
+    String path,
+    DormPhotoSection section,
+    int index,
+    BookingFlowCubit cubit,
+  ) {
+    return Stack(
+      children: [
+        PassItemImage(
+          imageUrl: path,
+          width: 88.w,
+          height: 88.w,
+          borderRadius: BorderRadius.circular(12.r),
+          fit: BoxFit.cover,
+        ),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: GestureDetector(
+            onTap: () => cubit.removeDormPhoto(section, index),
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              child: const Icon(Icons.close, size: 13, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _addImageBtn(UniMoveColors c, DormPhotoSection section, BookingFlowCubit cubit) {
+    return GestureDetector(
+      onTap: () => _showImageSourceSheet(cubit, section),
+      child: Container(
+        width: 88.w,
+        height: 88.w,
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(12.r),
+          border: Border.all(color: c.border, width: 1.5),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add, size: 24.sp, color: c.primary),
+            SizedBox(height: 2.h),
+            Text('Thêm', style: TextStyle(fontSize: 10.sp, color: c.primary, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showImageSourceSheet(BookingFlowCubit cubit, DormPhotoSection section) async {
     final c = UniMoveColors.of(context);
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -381,185 +604,19 @@ class _MoveDormDetailsPageState extends State<MoveDormDetailsPage> {
       },
     );
     if (source == null) return;
-    await _pickImage(source, section);
+    await _pickImage(source, cubit, section);
   }
 
-  Future<void> _pickImage(ImageSource source, DormPhotoSection section) async {
-    final cubit = context.read<BookingFlowCubit>();
-    final paths = cubit.state.dormImagePathsFor(section);
-    if (paths.length >= BookingFlowCubit.maxImagesPerSection) return;
-
+  Future<void> _pickImage(ImageSource source, BookingFlowCubit cubit, DormPhotoSection section) async {
     try {
-      final picked = await _picker.pickImage(
-        source: source,
-        maxWidth: 1600,
-        imageQuality: 85,
-      );
+      final picked = await _picker.pickImage(source: source, maxWidth: 1600, imageQuality: 85);
       if (picked == null) return;
-      cubit.addSectionImage(section, picked.path);
+      cubit.addDormPhoto(section, picked.path);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Không mở được ảnh: $e')),
       );
     }
-  }
-
-  Widget _sectionPhotoUpload(
-    UniMoveColors c,
-    BookingFlowState state,
-    BookingFlowCubit cubit,
-    DormPhotoSection section,
-  ) {
-    final paths = state.dormImagePathsFor(section);
-    final maxImages = BookingFlowCubit.maxImagesPerSection;
-
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(12.w),
-      decoration: BoxDecoration(
-        color: c.surfaceTint,
-        borderRadius: BorderRadius.circular(14.r),
-        border: Border.all(color: c.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.photo_camera_outlined, size: 16.sp, color: c.primary),
-              SizedBox(width: 6.w),
-              Expanded(
-                child: Text(
-                  section.label,
-                  style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: c.onSurface),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 4.h),
-          Text(section.hint, style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted)),
-          SizedBox(height: 10.h),
-          if (paths.isEmpty)
-            _emptyPhotoBtn(c, section)
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (var i = 0; i < paths.length; i++) ...[
-                    _imageThumb(c, paths[i], i, cubit, section),
-                    SizedBox(width: 8.w),
-                  ],
-                  if (paths.length < maxImages) _addImageBtn(c, section),
-                ],
-              ),
-            ),
-          if (paths.isNotEmpty) ...[
-            SizedBox(height: 6.h),
-            Text(
-              '${paths.length}/$maxImages ảnh',
-              style: TextStyle(fontSize: 10.sp, color: c.onSurfaceMuted),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _emptyPhotoBtn(UniMoveColors c, DormPhotoSection section) {
-    return Material(
-      color: c.surface,
-      borderRadius: BorderRadius.circular(12.r),
-      child: InkWell(
-        onTap: () => _showImageSourceSheet(section),
-        borderRadius: BorderRadius.circular(12.r),
-        child: Container(
-          width: double.infinity,
-          height: 72.h,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12.r),
-            border: Border.all(color: c.border, style: BorderStyle.solid),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.add_photo_alternate_outlined, size: 22.sp, color: c.primary),
-              SizedBox(width: 8.w),
-              Text(
-                'Thêm ảnh',
-                style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: c.primary),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _imageThumb(
-    UniMoveColors c,
-    String path,
-    int index,
-    BookingFlowCubit cubit,
-    DormPhotoSection section,
-  ) {
-    return Stack(
-      children: [
-        PassItemImage(
-          imageUrl: path,
-          width: 80.w,
-          height: 80.w,
-          borderRadius: BorderRadius.circular(10.r),
-          fit: BoxFit.cover,
-          errorPlaceholder: Container(
-            width: 80.w,
-            height: 80.w,
-            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(10.r)),
-            child: Icon(Icons.broken_image_outlined, color: c.onSurfaceMuted, size: 24.sp),
-          ),
-        ),
-        Positioned(
-          top: 2,
-          right: 2,
-          child: GestureDetector(
-            onTap: () => cubit.removeSectionImage(section, index),
-            child: Container(
-              width: 20.w,
-              height: 20.w,
-              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-              child: Icon(Icons.close, size: 12.sp, color: Colors.white),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _addImageBtn(UniMoveColors c, DormPhotoSection section) {
-    return GestureDetector(
-      onTap: () => _showImageSourceSheet(section),
-      child: Container(
-        width: 80.w,
-        height: 80.w,
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(10.r),
-          border: Border.all(color: c.border, width: 1.5),
-        ),
-        child: Icon(Icons.add, size: 24.sp, color: c.primary),
-      ),
-    );
-  }
-
-  Widget _referenceLink(BuildContext context, UniMoveColors c) {
-    return TextButton.icon(
-      onPressed: () => context.push('/booking/reference-prices'),
-      icon: Icon(Icons.receipt_long_outlined, size: 18.sp, color: c.primary),
-      label: Text(
-        'Xem bảng phụ phí tham khảo',
-        style: TextStyle(color: c.primary, fontWeight: FontWeight.w600),
-      ),
-    );
   }
 }

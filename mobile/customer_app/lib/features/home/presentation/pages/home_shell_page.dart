@@ -12,14 +12,16 @@ import '../../../payments/presentation/pages/payments_tab_page.dart';
 import 'home_page.dart';
 
 class HomeShellPage extends StatefulWidget {
-  const HomeShellPage({super.key});
+  const HomeShellPage({super.key, this.initialTab = 0});
+
+  final int initialTab;
 
   @override
   State<HomeShellPage> createState() => _HomeShellPageState();
 }
 
 class _HomeShellPageState extends State<HomeShellPage> {
-  int _index = 0;
+  late int _index;
   int _unreadMessages = 0;
   final _notificationsRepo = NotificationsRepository();
 
@@ -33,6 +35,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
   @override
   void initState() {
     super.initState();
+    _index = widget.initialTab.clamp(0, _tabs.length - 1);
     _loadUnread();
   }
 

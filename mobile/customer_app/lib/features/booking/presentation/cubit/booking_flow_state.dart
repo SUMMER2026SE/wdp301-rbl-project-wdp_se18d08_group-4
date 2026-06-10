@@ -1,4 +1,5 @@
 import '../../domain/booking_models.dart';
+import '../../domain/quote_models.dart';
 
 class BookingFlowState {
   const BookingFlowState({
@@ -28,11 +29,7 @@ class BookingFlowState {
     this.destinationAlleyAccess = AlleyAccess.unknown,
     this.cargoVolume = CargoVolume.medium,
     this.dormNote = '',
-    this.pickupAlleyImagePaths = const [],
-    this.destinationAlleyImagePaths = const [],
-    this.pickupStairImagePaths = const [],
-    this.destinationStairImagePaths = const [],
-    this.cargoImagePaths = const [],
+    this.dormPhotos = const {},
     this.dormImageUrls = const [],
     this.laborNote = '',
     this.linkedOrderId,
@@ -41,10 +38,21 @@ class BookingFlowState {
     this.quickCompareEntry = false,
     this.passItemDelivery = false,
     this.passItemId,
-    this.extraComboLaborCount = 0,
+    this.isComboBooking = false,
+    this.isQuoteBooking = false,
+    this.quoteReferenceId,
+    this.quoteProviderName,
+    this.quoteBasePrice = 0,
+    this.quoteSurcharges = const [],
+    this.selectedComboLaborCount = 0,
+    this.wantsRetailLabor = false,
+    this.wantsTransportLabor = false,
+    this.transportLaborHelpers = 2,
+    this.transportLaborHours = 2,
     this.insurancePlans = const [],
     this.selectedInsurancePlanId,
     this.loadingInsurancePlans = false,
+    this.scheduledPickupAt,
   });
 
   final BookingServiceType serviceType;
@@ -73,42 +81,29 @@ class BookingFlowState {
   final AlleyAccess destinationAlleyAccess;
   final CargoVolume cargoVolume;
   final String dormNote;
+  final Map<DormPhotoSection, List<String>> dormPhotos;
 
-  final List<String> pickupAlleyImagePaths;
-  final List<String> destinationAlleyImagePaths;
-  final List<String> pickupStairImagePaths;
-  final List<String> destinationStairImagePaths;
-  final List<String> cargoImagePaths;
-
-  /// URL sau khi upload lên server (khi gửi yêu cầu báo giá).
+  /// URL sau khi upload (khi gửi yêu cầu báo giá).
   final List<String> dormImageUrls;
 
-  bool get showPickupAlleyPhotos => pickupAlleyAccess.needsAlleyPhoto;
+  List<String> get dormImagePaths =>
+      dormPhotos.values.expand((paths) => paths).toList(growable: false);
 
-  bool get showDestinationAlleyPhotos => destinationAlleyAccess.needsAlleyPhoto;
-
-  bool get showPickupStairPhotos => !pickupHasElevator;
-
-  bool get showDestinationStairPhotos => !hasElevator;
-
-  bool get showCargoPhotos => cargoVolume.needsCargoPhoto;
-
-  List<String> dormImagePathsFor(DormPhotoSection section) => switch (section) {
-        DormPhotoSection.pickupAlley => pickupAlleyImagePaths,
-        DormPhotoSection.destinationAlley => destinationAlleyImagePaths,
-        DormPhotoSection.pickupStairs => pickupStairImagePaths,
-        DormPhotoSection.destinationStairs => destinationStairImagePaths,
-        DormPhotoSection.cargo => cargoImagePaths,
-      };
+  int get dormImageCount => dormImagePaths.length;
 
   Iterable<String> get activeDormImagePaths sync* {
-    if (showPickupAlleyPhotos) yield* pickupAlleyImagePaths;
-    if (showPickupStairPhotos) yield* pickupStairImagePaths;
-    if (showDestinationAlleyPhotos) yield* destinationAlleyImagePaths;
-    if (showDestinationStairPhotos) yield* destinationStairImagePaths;
-    if (showCargoPhotos) yield* cargoImagePaths;
+    for (final section in DormPhotoSection.values) {
+      if (section.isVisible(
+        pickupHasElevator: pickupHasElevator,
+        pickupAlley: pickupAlleyAccess,
+        destinationHasElevator: hasElevator,
+        destinationAlley: destinationAlleyAccess,
+        cargoVolume: cargoVolume,
+      )) {
+        yield* dormPhotos[section] ?? const [];
+      }
+    }
   }
-
   final String laborNote;
   final String? linkedOrderId;
   final String? linkedOrderNumber;
@@ -123,12 +118,35 @@ class BookingFlowState {
   /// Tin pass đồ liên kết (khóa huỷ chốt khi khách đã đặt xe).
   final String? passItemId;
 
-  /// Số người khuân vác thêm (ngoài số đã có trong combo).
-  final int extraComboLaborCount;
+  /// Đặt qua combo niêm yết (xe+km cố định, nhà xe chỉ đặt giá khuân vác).
+  final bool isComboBooking;
+
+  /// Đặt chuyến linh hoạt qua luồng báo giá (đã chốt nhà xe, chờ đặt cọc).
+  final bool isQuoteBooking;
+  final String? quoteReferenceId;
+  final String? quoteProviderName;
+  final int quoteBasePrice;
+  final List<QuoteSurchargeLine> quoteSurcharges;
+
+  /// Số người khuân vác trong combo (0 = dùng [ServicePackage.laborSuggested]).
+  final int selectedComboLaborCount;
+
+  /// Khách chọn thuê thêm khuân vác riêng (giá retail, đối tác báo giá).
+  final bool wantsRetailLabor;
+
+  /// Đặt chuyến thường — muốn nhà xe báo giá kèm khuân vác ngay từ đầu.
+  final bool wantsTransportLabor;
+  final int transportLaborHelpers;
+  final int transportLaborHours;
 
   final List<CargoInsurancePlan> insurancePlans;
   final String? selectedInsurancePlanId;
   final bool loadingInsurancePlans;
+
+  /// Thời điểm nhà xe bắt đầu lấy đồ — vận chuyển chỉ diễn ra từ khung giờ này.
+  final DateTime? scheduledPickupAt;
+
+  bool get hasScheduledPickup => scheduledPickupAt != null;
 
   bool get isLaborOnly => serviceType == BookingServiceType.laborOnly;
 
@@ -161,6 +179,13 @@ class BookingFlowState {
     return null;
   }
 
+  int get effectiveComboLaborCount {
+    final pkg = selectedPackage;
+    if (pkg == null) return 0;
+    if (selectedComboLaborCount > 0) return selectedComboLaborCount;
+    return pkg.laborSuggested;
+  }
+
   int get baseLaborFee =>
       isLaborService ? helperCount * laborHours * LaborPricing.perHelperPerHour : 0;
 
@@ -171,17 +196,69 @@ class BookingFlowState {
       ? floorCount * LaborPricing.perFloorNoElevator
       : 0;
 
+  String get pickupAccessSummary =>
+      'Tầng $pickupFloor · ${pickupHasElevator ? 'có thang máy' : 'không thang máy'} · ${pickupAlleyAccess.label}';
+
+  String get destinationAccessSummary =>
+      'Tầng $floorCount · ${hasElevator ? 'có thang máy' : 'không thang máy'} · ${destinationAlleyAccess.label}';
+
+  String get dormDetailsSummary {
+    final buf = StringBuffer()
+      ..writeln('Trọ cũ: $pickupAccessSummary')
+      ..writeln('Trọ mới: $destinationAccessSummary')
+      ..writeln('Đồ: ${cargoVolume.label} (${cargoVolume.examples})');
+    if (wantsTransportLabor && !isComboBooking) {
+      buf.writeln('Khuân vác: $transportLaborHelpers người · $transportLaborHours giờ (nhà xe báo giá)');
+    }
+    if (dormNote.trim().isNotEmpty) {
+      buf.writeln('Ghi chú: ${dormNote.trim()}');
+    }
+    if (dormImageCount > 0) {
+      final labels = DormPhotoSection.values
+          .where((s) => (dormPhotos[s] ?? []).isNotEmpty)
+          .map((s) => '${s.label} (${dormPhotos[s]!.length})')
+          .join(', ');
+      buf.write('Ảnh: $labels');
+    }
+    return buf.toString().trim();
+  }
+
   /// Giá khuân vác từ đối tác đã chọn (marketplace).
   int get laborQuotedPrice =>
       selectedLaborProvider?.price ?? (baseLaborFee + floorFee);
 
-  int get movePackagePrice => isLaborService ? 0 : (selectedPackage?.price ?? 450000);
+  /// Giá xe + km niêm yết (cố định theo combo app).
+  int get movePackagePrice =>
+      isLaborService ? 0 : (selectedPackage?.transportBasePrice ?? 300000);
 
-  int get comboExtraLaborFee {
-    if (isLaborService) return 0;
+  /// Đơn giá khuân vác/người — nhà xe combo đặt; mặc định lấy từ catalog app.
+  int get effectiveComboLaborUnitPrice {
     final pkg = selectedPackage;
     if (pkg == null) return 0;
-    return extraComboLaborCount * pkg.extraLaborComboPrice;
+    if (isComboBooking && selectedPartner?.comboLaborUnitPrice != null) {
+      return selectedPartner!.comboLaborUnitPrice!;
+    }
+    return pkg.extraLaborComboPrice;
+  }
+
+  /// Khuân vác trong combo theo số người khách chọn.
+  int get comboLaborFee {
+    if (isLaborService) return 0;
+    return effectiveComboLaborCount * effectiveComboLaborUnitPrice;
+  }
+
+  /// Tổng combo niêm yết với 1 nhà xe (xe/km cố định + khuân vác nhà xe).
+  int comboTotalForPartner(PartnerOffer partner) {
+    final pkg = selectedPackage;
+    if (pkg == null) return 0;
+    final laborUnit = partner.comboLaborUnitPrice ?? pkg.extraLaborComboPrice;
+    return pkg.transportBasePrice + effectiveComboLaborCount * laborUnit;
+  }
+
+  /// Khuân vác riêng thêm vào chuyến fullMove — giá retail do đối tác báo.
+  int get retailLaborFee {
+    if (!wantsRetailLabor || isLaborService) return 0;
+    return selectedLaborProvider?.price ?? 0;
   }
 
   CargoInsurancePlan? get selectedInsurancePlan {
@@ -204,9 +281,23 @@ class BookingFlowState {
     return plan.price;
   }
 
+  /// Giá vận chuyển do nhà xe báo (đặt chuyến linh hoạt — không qua combo).
+  int get partnerTransportPrice {
+    if (isLaborService || isComboBooking) return 0;
+    return selectedPartner?.price ?? 0;
+  }
+
+  int get quoteSurchargeTotal => quoteSurcharges.fold(0, (sum, s) => sum + s.amount);
+
+  int get quoteQuotedTotal => quoteBasePrice + quoteSurchargeTotal;
+
   int get subtotal {
+    if (isQuoteBooking) return quoteQuotedTotal;
     if (isLaborService) return laborQuotedPrice;
-    return movePackagePrice + comboExtraLaborFee + insuranceFee;
+    if (isComboBooking) {
+      return movePackagePrice + comboLaborFee + retailLaborFee + insuranceFee;
+    }
+    return partnerTransportPrice + retailLaborFee + insuranceFee;
   }
 
   int get discount => discountApplied ? 35000 : 0;
@@ -214,6 +305,22 @@ class BookingFlowState {
   int get serviceFee => 0;
 
   int get total => subtotal - discount + serviceFee;
+
+  String get scheduledPickupLabel {
+    final dt = scheduledPickupAt;
+    if (dt == null) return 'Chưa chọn';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final pickedDay = DateTime(dt.year, dt.month, dt.day);
+    final dayLabel = pickedDay == today
+        ? 'Hôm nay'
+        : pickedDay == today.add(const Duration(days: 1))
+            ? 'Ngày mai'
+            : '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$dayLabel · $h:$m';
+  }
 
   BookingFlowState copyWith({
     BookingServiceType? serviceType,
@@ -242,11 +349,7 @@ class BookingFlowState {
     AlleyAccess? destinationAlleyAccess,
     CargoVolume? cargoVolume,
     String? dormNote,
-    List<String>? pickupAlleyImagePaths,
-    List<String>? destinationAlleyImagePaths,
-    List<String>? pickupStairImagePaths,
-    List<String>? destinationStairImagePaths,
-    List<String>? cargoImagePaths,
+    Map<DormPhotoSection, List<String>>? dormPhotos,
     List<String>? dormImageUrls,
     String? laborNote,
     String? linkedOrderId,
@@ -255,12 +358,27 @@ class BookingFlowState {
     bool? quickCompareEntry,
     bool? passItemDelivery,
     String? passItemId,
-    int? extraComboLaborCount,
+    bool? isComboBooking,
+    bool? isQuoteBooking,
+    String? quoteReferenceId,
+    String? quoteProviderName,
+    int? quoteBasePrice,
+    List<QuoteSurchargeLine>? quoteSurcharges,
+    bool clearQuoteBooking = false,
+    int? selectedComboLaborCount,
+    bool? wantsRetailLabor,
+    bool? wantsTransportLabor,
+    int? transportLaborHelpers,
+    int? transportLaborHours,
     bool clearPassItemId = false,
     List<CargoInsurancePlan>? insurancePlans,
     String? selectedInsurancePlanId,
     bool? loadingInsurancePlans,
+    DateTime? scheduledPickupAt,
+    bool clearScheduledPickup = false,
     bool clearLinkedOrder = false,
+    bool clearLaborProvider = false,
+    bool clearLaborQuotes = false,
   }) {
     return BookingFlowState(
       serviceType: serviceType ?? this.serviceType,
@@ -268,7 +386,9 @@ class BookingFlowState {
       destination: destination ?? this.destination,
       selectedTier: selectedTier ?? this.selectedTier,
       selectedPartnerId: selectedPartnerId ?? this.selectedPartnerId,
-      selectedLaborProviderId: selectedLaborProviderId ?? this.selectedLaborProviderId,
+      selectedLaborProviderId: clearLaborProvider
+          ? null
+          : (selectedLaborProviderId ?? this.selectedLaborProviderId),
       paymentMethod: paymentMethod ?? this.paymentMethod,
       discountCode: discountCode ?? this.discountCode,
       discountApplied: discountApplied ?? this.discountApplied,
@@ -278,7 +398,7 @@ class BookingFlowState {
       recentPlaces: recentPlaces ?? this.recentPlaces,
       packages: packages ?? this.packages,
       partners: partners ?? this.partners,
-      laborQuotes: laborQuotes ?? this.laborQuotes,
+      laborQuotes: clearLaborQuotes ? const [] : (laborQuotes ?? this.laborQuotes),
       helperCount: helperCount ?? this.helperCount,
       laborHours: laborHours ?? this.laborHours,
       floorCount: floorCount ?? this.floorCount,
@@ -289,11 +409,7 @@ class BookingFlowState {
       destinationAlleyAccess: destinationAlleyAccess ?? this.destinationAlleyAccess,
       cargoVolume: cargoVolume ?? this.cargoVolume,
       dormNote: dormNote ?? this.dormNote,
-      pickupAlleyImagePaths: pickupAlleyImagePaths ?? this.pickupAlleyImagePaths,
-      destinationAlleyImagePaths: destinationAlleyImagePaths ?? this.destinationAlleyImagePaths,
-      pickupStairImagePaths: pickupStairImagePaths ?? this.pickupStairImagePaths,
-      destinationStairImagePaths: destinationStairImagePaths ?? this.destinationStairImagePaths,
-      cargoImagePaths: cargoImagePaths ?? this.cargoImagePaths,
+      dormPhotos: dormPhotos ?? this.dormPhotos,
       dormImageUrls: dormImageUrls ?? this.dormImageUrls,
       laborNote: laborNote ?? this.laborNote,
       linkedOrderId: clearLinkedOrder ? null : (linkedOrderId ?? this.linkedOrderId),
@@ -304,10 +420,25 @@ class BookingFlowState {
       quickCompareEntry: quickCompareEntry ?? this.quickCompareEntry,
       passItemDelivery: passItemDelivery ?? this.passItemDelivery,
       passItemId: clearPassItemId ? null : (passItemId ?? this.passItemId),
-      extraComboLaborCount: extraComboLaborCount ?? this.extraComboLaborCount,
+      isComboBooking: isComboBooking ?? this.isComboBooking,
+      isQuoteBooking: clearQuoteBooking ? false : (isQuoteBooking ?? this.isQuoteBooking),
+      quoteReferenceId:
+          clearQuoteBooking ? null : (quoteReferenceId ?? this.quoteReferenceId),
+      quoteProviderName:
+          clearQuoteBooking ? null : (quoteProviderName ?? this.quoteProviderName),
+      quoteBasePrice: clearQuoteBooking ? 0 : (quoteBasePrice ?? this.quoteBasePrice),
+      quoteSurcharges:
+          clearQuoteBooking ? const [] : (quoteSurcharges ?? this.quoteSurcharges),
+      selectedComboLaborCount: selectedComboLaborCount ?? this.selectedComboLaborCount,
+      wantsRetailLabor: wantsRetailLabor ?? this.wantsRetailLabor,
+      wantsTransportLabor: wantsTransportLabor ?? this.wantsTransportLabor,
+      transportLaborHelpers: transportLaborHelpers ?? this.transportLaborHelpers,
+      transportLaborHours: transportLaborHours ?? this.transportLaborHours,
       insurancePlans: insurancePlans ?? this.insurancePlans,
       selectedInsurancePlanId: selectedInsurancePlanId ?? this.selectedInsurancePlanId,
       loadingInsurancePlans: loadingInsurancePlans ?? this.loadingInsurancePlans,
+      scheduledPickupAt:
+          clearScheduledPickup ? null : (scheduledPickupAt ?? this.scheduledPickupAt),
     );
   }
 }

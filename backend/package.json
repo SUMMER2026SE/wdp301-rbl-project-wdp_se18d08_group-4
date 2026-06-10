@@ -9,7 +9,8 @@
     "test": "node test-connection.js",
     "test:connection": "node test-connection.js",
     "create-admin": "node create-admin.js",
-    "seed:admin": "node seed-admin-data.js"
+    "seed:admin": "node seed-admin-data.js",
+    "seed:providers": "node seed-provider-accounts.js"
   },
   "keywords": [
     "express",

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
@@ -9,6 +10,7 @@ import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/smooth_cta_button.dart';
 import '../../data/quote_progress_repository.dart';
 import '../../domain/quote_models.dart';
+import '../cubit/booking_flow_cubit.dart';
 import '../widgets/provider_reviews_panel.dart';
 
 /// Tiến trình báo giá — nhận báo giá, so sánh, chốt nhà xe trên app.
@@ -31,6 +33,8 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
   QuoteRequestSnapshot? _snapshot;
   bool _loading = true;
   int _sortIndex = 0;
+  int _quoteTabIndex = 0;
+  String? _confirmingQuoteId;
   Timer? _statusPoll;
 
   @override
@@ -50,8 +54,9 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
     final snap = await _repo.fetch(widget.referenceId);
     if (!mounted) return;
 
-    // Đã chốt nhà xe nhưng chưa chọn lịch → chuyển thẳng sang bước lịch.
-    if (snap?.status == QuoteProgressStatus.providerConfirmed) {
+    // Luồng cũ: chốt nhà xe nhưng chưa chọn giờ trước → sang màn chọn lịch nhà xe.
+    if (snap?.status == QuoteProgressStatus.providerConfirmed &&
+        !snap!.hasRequestedPickup) {
       context.go('/booking/quotes/${widget.referenceId}/schedule');
       return;
     }
@@ -71,8 +76,8 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
     }
   }
 
-  List<ProviderQuoteResponse> get _sortedQuotes {
-    final quotes = [...?_snapshot?.quotes];
+  List<ProviderQuoteResponse> _sortedQuotes(List<ProviderQuoteResponse> source) {
+    final quotes = [...source];
     if (_sortIndex == 1) {
       quotes.sort((a, b) => b.rating.compareTo(a.rating));
     } else {
@@ -80,6 +85,17 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
     }
     return quotes;
   }
+
+  List<ProviderQuoteResponse> get _exactQuotes =>
+      _sortedQuotes(_snapshot?.quotes.where((q) => q.scheduleFit == QuoteScheduleFit.exactMatch).toList() ?? []);
+
+  List<ProviderQuoteResponse> get _alternateQuotes => _sortedQuotes(
+        _snapshot?.quotes.where((q) => q.scheduleFit == QuoteScheduleFit.alternateProposed).toList() ?? [],
+      );
+
+  List<ProviderQuoteResponse> get _unavailableQuotes => _sortedQuotes(
+        _snapshot?.quotes.where((q) => q.scheduleFit == QuoteScheduleFit.unavailable).toList() ?? [],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -160,6 +176,36 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
           Text('Mã: ${snap.id}', style: TextStyle(fontWeight: FontWeight.w700, color: c.primary)),
           SizedBox(height: 8.h),
           Text('${snap.pickup} → ${snap.destination}', style: TextStyle(fontSize: 13.sp, color: c.onSurface)),
+          if (snap.requestedPickupLabel != null) ...[
+            SizedBox(height: 8.h),
+            Row(
+              children: [
+                Icon(Icons.schedule, size: 16.sp, color: c.primary),
+                SizedBox(width: 6.w),
+                Expanded(
+                  child: Text(
+                    'Giờ mong muốn: ${snap.requestedPickupLabel}',
+                    style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: c.onSurface),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (snap.wantsTransportLabor && snap.transportLaborLabel != null) ...[
+            SizedBox(height: 8.h),
+            Row(
+              children: [
+                Icon(Icons.groups_outlined, size: 16.sp, color: c.primary),
+                SizedBox(width: 6.w),
+                Expanded(
+                  child: Text(
+                    'Khuân vác: ${snap.transportLaborLabel}',
+                    style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: c.onSurface),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -264,7 +310,9 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
     return switch (snap.status) {
       QuoteProgressStatus.waitingQuotes => _waitingBox(c),
       QuoteProgressStatus.quotesReady => _quotesSection(c, snap),
-      QuoteProgressStatus.providerConfirmed => _pickScheduleSection(c, snap),
+      QuoteProgressStatus.providerConfirmed => snap.pendingAlternateSchedule
+          ? _alternateScheduleSection(c, snap)
+          : _pickScheduleSection(c, snap),
       QuoteProgressStatus.scheduled => _awaitingProviderSection(c, snap),
       QuoteProgressStatus.providerAccepted => _providerAcceptedSection(c, snap),
       QuoteProgressStatus.depositPaid => _depositPaidSection(c, snap),
@@ -287,7 +335,7 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
           ),
           SizedBox(height: 6.h),
           Text(
-            'Các provider đã xác minh sẽ gửi giá + bảng phụ phí lên app. '
+            'Các nhà xe sẽ báo giá kèm khả năng nhận đúng giờ bạn chọn. '
             'Bạn sẽ được thông báo ngay khi có báo giá.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.4),
@@ -298,18 +346,30 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
   }
 
   Widget _quotesSection(UniMoveColors c, QuoteRequestSnapshot snap) {
-    final quotes = _sortedQuotes;
+    final exact = _exactQuotes;
+    final alternate = _alternateQuotes;
+    final unavailable = _unavailableQuotes;
+    final total = exact.length + alternate.length + unavailable.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '${quotes.length} nhà xe đã báo giá',
+          '$total nhà xe đã báo giá',
           style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w800),
         ),
         SizedBox(height: 6.h),
         Text(
-          'So sánh giá, đánh giá và phụ phí minh bạch trước khi chốt.',
-          style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
+          'Chọn tab phù hợp: nhận đúng giờ bạn chọn hoặc đổi giờ theo đề xuất nhà xe.',
+          style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            Expanded(child: _quoteTabChip(c, 'Nhận đúng giờ', exact.length, 0)),
+            SizedBox(width: 8.w),
+            Expanded(child: _quoteTabChip(c, 'Đổi giờ để chốt', alternate.length, 1)),
+          ],
         ),
         SizedBox(height: 12.h),
         Row(
@@ -320,8 +380,114 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
           ],
         ),
         SizedBox(height: 14.h),
-        ...quotes.map((q) => _quoteCard(c, q, showAction: true)),
+        if (_quoteTabIndex == 0) ...[
+          if (exact.isEmpty)
+            _emptyTabHint(
+              c,
+              'Chưa có nhà xe nhận đúng giờ bạn chọn.',
+              'Xem tab "Đổi giờ để chốt" để chọn giờ nhà xe đề xuất.',
+            )
+          else
+            ...exact.map((q) => _exactQuoteCard(c, q)),
+        ] else ...[
+          if (alternate.isEmpty)
+            _emptyTabHint(
+              c,
+              'Chưa có nhà xe đề xuất giờ thay thế.',
+              'Quay lại tab "Nhận đúng giờ" nếu có nhà xe phù hợp.',
+            )
+          else
+            ...alternate.map((q) => _alternateQuoteCard(c, q)),
+          if (unavailable.isNotEmpty) ...[
+            SizedBox(height: 16.h),
+            Text(
+              'Không có lịch phù hợp (${unavailable.length})',
+              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700, color: c.onSurfaceMuted),
+            ),
+            SizedBox(height: 8.h),
+            ...unavailable.map((q) => _quoteCard(c, q, showAction: true, viewOnly: true)),
+          ],
+        ],
       ],
+    );
+  }
+
+  Widget _quoteTabChip(UniMoveColors c, String label, int count, int index) {
+    final active = _quoteTabIndex == index;
+    return Material(
+      color: active ? c.primary : c.surface,
+      borderRadius: BorderRadius.circular(12.r),
+      child: InkWell(
+        onTap: () => setState(() => _quoteTabIndex = index),
+        borderRadius: BorderRadius.circular(12.r),
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 10.w),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12.r),
+            border: Border.all(color: active ? c.primary : c.border),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w700,
+                  color: active ? Colors.white : c.onSurface,
+                ),
+              ),
+              SizedBox(height: 2.h),
+              Text(
+                '$count nhà xe',
+                style: TextStyle(
+                  fontSize: 10.sp,
+                  color: active ? Colors.white.withValues(alpha: 0.9) : c.onSurfaceMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyTabHint(UniMoveColors c, String title, String subtitle) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(color: c.chipBg, borderRadius: BorderRadius.circular(14.r)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.sp)),
+          SizedBox(height: 6.h),
+          Text(subtitle, style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35)),
+        ],
+      ),
+    );
+  }
+
+  Widget _exactQuoteCard(UniMoveColors c, ProviderQuoteResponse q) {
+    return _quoteCard(
+      c,
+      q,
+      showAction: true,
+      primaryActionLabel: 'Chốt ngay',
+      onPrimaryAction: () => _confirmExactQuote(q),
+      isConfirming: _confirmingQuoteId == q.id,
+    );
+  }
+
+  Widget _alternateQuoteCard(UniMoveColors c, ProviderQuoteResponse q) {
+    return _quoteCard(
+      c,
+      q,
+      showAction: true,
+      primaryActionLabel: 'Chọn giờ & chốt giá',
+      onPrimaryAction: () => _confirmAlternateQuote(q),
+      isConfirming: _confirmingQuoteId == q.id,
+      showProposedTime: true,
     );
   }
 
@@ -336,7 +502,16 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
     );
   }
 
-  Widget _quoteCard(UniMoveColors c, ProviderQuoteResponse q, {bool showAction = false}) {
+  Widget _quoteCard(
+    UniMoveColors c,
+    ProviderQuoteResponse q, {
+    bool showAction = false,
+    bool viewOnly = false,
+    String? primaryActionLabel,
+    VoidCallback? onPrimaryAction,
+    bool isConfirming = false,
+    bool showProposedTime = false,
+  }) {
     return Container(
       margin: EdgeInsets.only(bottom: 12.h),
       padding: EdgeInsets.all(14.w),
@@ -387,6 +562,8 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
               ),
             ],
           ),
+          SizedBox(height: 6.h),
+          _scheduleFitChip(c, q),
           if (q.surcharges.isNotEmpty) ...[
             SizedBox(height: 8.h),
             ...q.surcharges.map(
@@ -399,18 +576,135 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
               ),
             ),
           ],
-          if (showAction) ...[
-            SizedBox(height: 10.h),
-            SizedBox(
+          if (showProposedTime && q.proposedPickupLabel != null) ...[
+            SizedBox(height: 8.h),
+            Container(
               width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => context.push('/booking/quotes/${widget.referenceId}/offer/${q.id}'),
-                child: const Text('Xem chi tiết & chốt'),
+              padding: EdgeInsets.all(10.w),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10.r),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule, size: 18.sp, color: Colors.orange.shade800),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: Text(
+                      'Giờ đề xuất: ${q.proposedPickupLabel}',
+                      style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: Colors.orange.shade900),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
+          if (showAction) ...[
+            SizedBox(height: 10.h),
+            if (!viewOnly && onPrimaryAction != null && primaryActionLabel != null) ...[
+              SmoothCtaButton(
+                label: isConfirming ? 'Đang chốt...' : primaryActionLabel,
+                isLoading: isConfirming,
+                onPressed: isConfirming ? null : onPrimaryAction,
+              ),
+              SizedBox(height: 8.h),
+            ],
+            SmoothCtaButton(
+              label: 'Xem chi tiết báo giá',
+              showArrow: false,
+              outlined: true,
+              onPressed: () => _openQuoteDetail(q),
+            ),
+            if (viewOnly) ...[
+              SizedBox(height: 6.h),
+              Text(
+                'Nhà xe này không có lịch phù hợp với giờ bạn chọn.',
+                style: TextStyle(fontSize: 11.sp, color: Colors.red.shade700, height: 1.3),
+              ),
+            ],
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _scheduleFitChip(UniMoveColors c, ProviderQuoteResponse q) {
+    final (bg, fg) = switch (q.scheduleFit) {
+      QuoteScheduleFit.exactMatch => (c.primary.withValues(alpha: 0.12), c.primary),
+      QuoteScheduleFit.alternateProposed => (Colors.orange.withValues(alpha: 0.12), Colors.orange.shade800),
+      QuoteScheduleFit.unavailable => (Colors.red.withValues(alpha: 0.1), Colors.red.shade700),
+    };
+    final detail = switch (q.scheduleFit) {
+      QuoteScheduleFit.exactMatch => q.scheduleFit.label,
+      QuoteScheduleFit.alternateProposed =>
+        '${q.scheduleFit.label}${q.proposedPickupLabel != null ? ': ${q.proposedPickupLabel}' : ''}',
+      QuoteScheduleFit.unavailable => q.scheduleFit.label,
+    };
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10.r),
+      ),
+      child: Text(
+        detail,
+        style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w600, color: fg),
+      ),
+    );
+  }
+
+  Widget _alternateScheduleSection(UniMoveColors c, QuoteRequestSnapshot snap) {
+    final q = snap.confirmedQuote;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Nhà xe đề xuất giờ khác', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w800)),
+        SizedBox(height: 12.h),
+        if (q != null) _quoteCard(c, q),
+        if (snap.requestedPickupLabel != null) ...[
+          SizedBox(height: 10.h),
+          _scheduleInfoCard(c, 'Bạn chọn: ${snap.requestedPickupLabel}'),
+        ],
+        if (q?.proposedPickupLabel != null) ...[
+          SizedBox(height: 8.h),
+          _scheduleInfoCard(c, 'Nhà xe đề xuất: ${q!.proposedPickupLabel}'),
+        ],
+        SizedBox(height: 12.h),
+        Text(
+          'Bạn có thể đồng ý giờ mới hoặc quay lại chọn nhà xe khác.',
+          style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+        ),
+        SizedBox(height: 16.h),
+        SmoothCtaButton(
+          label: 'Đồng ý giờ đề xuất',
+          onPressed: () async {
+            try {
+              await _repo.acceptAlternateSchedule(referenceId: widget.referenceId);
+              if (!mounted) return;
+              _load();
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+            }
+          },
+        ),
+        SizedBox(height: 10.h),
+        OutlinedButton(
+          onPressed: () async {
+            try {
+              await _repo.declineAlternateSchedule(referenceId: widget.referenceId);
+              if (!mounted) return;
+              _load();
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+            }
+          },
+          child: const Text('Chọn nhà xe khác'),
+        ),
+      ],
     );
   }
 
@@ -557,12 +851,24 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
   }
 
   Future<void> _payDeposit() async {
+    final snap = _snapshot;
+    if (snap == null || snap.confirmedQuote == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa chốt nhà xe — không thể đặt cọc')),
+      );
+      return;
+    }
+
     try {
-      final snap = await _repo.payDeposit(widget.referenceId);
+      context.read<BookingFlowCubit>().prepareQuoteDepositPayment(snap);
+      final paid = await context.push<bool>('/booking/payment');
       if (!mounted) return;
-      await _showDepositSuccess(snap);
-      if (!mounted) return;
-      await _load();
+      if (paid == true) {
+        await _load();
+        if (!mounted) return;
+        final refreshed = _snapshot;
+        if (refreshed != null) await _showDepositSuccess(refreshed);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -697,6 +1003,112 @@ class _QuoteProgressPageState extends State<QuoteProgressPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Chat chưa sẵn sàng — kéo xuống để làm mới')),
     );
+  }
+
+  Future<void> _confirmExactQuote(ProviderQuoteResponse q) async {
+    setState(() => _confirmingQuoteId = q.id);
+    try {
+      await _repo.confirmQuoteWithPickupTime(
+        referenceId: widget.referenceId,
+        quoteId: q.id,
+      );
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã chốt ${q.providerName} — chờ nhà xe xác nhận lịch')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _confirmingQuoteId = null);
+    }
+  }
+
+  Future<void> _confirmAlternateQuote(ProviderQuoteResponse q) async {
+    final pickupAt = await _pickAlternateTime(q);
+    if (pickupAt == null || !mounted) return;
+
+    setState(() => _confirmingQuoteId = q.id);
+    try {
+      await _repo.confirmQuoteWithPickupTime(
+        referenceId: widget.referenceId,
+        quoteId: q.id,
+        pickupAt: pickupAt,
+      );
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Đã chốt ${q.providerName} lúc ${formatQuotePickupLabel(pickupAt)} — chờ nhà xe xác nhận',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _confirmingQuoteId = null);
+    }
+  }
+
+  Future<DateTime?> _pickAlternateTime(ProviderQuoteResponse q) async {
+    final proposed = q.proposedPickupAt;
+    if (proposed == null) return null;
+
+    final options = <DateTime>{
+      proposed,
+      proposed.subtract(const Duration(minutes: 30)),
+      proposed.add(const Duration(minutes: 30)),
+      proposed.add(const Duration(hours: 1)),
+    }.toList()
+      ..sort();
+
+    final c = UniMoveColors.of(context);
+    return showModalBottomSheet<DateTime>(
+      context: context,
+      backgroundColor: c.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20.r))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 28.h),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Chọn giờ chuyển', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w800)),
+            SizedBox(height: 6.h),
+            Text(
+              'Giá ${_money(q.totalPrice)} áp dụng khi bạn chốt với một trong các khung giờ sau. '
+              'Nhà xe sẽ xác nhận lại trên app.',
+              style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+            ),
+            SizedBox(height: 14.h),
+            ...options.map(
+              (dt) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  dt == proposed ? Icons.recommend_outlined : Icons.schedule_outlined,
+                  color: c.primary,
+                ),
+                title: Text(formatQuotePickupLabel(dt), style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: dt == proposed ? const Text('Giờ nhà xe đề xuất') : null,
+                onTap: () => Navigator.pop(ctx, dt),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openQuoteDetail(ProviderQuoteResponse q) async {
+    final changed = await context.push<bool>(
+      '/booking/quotes/${widget.referenceId}/offer/${q.id}',
+    );
+    if (changed == true && mounted) await _load();
   }
 
   void _openReviews(BuildContext context, ProviderQuoteResponse q) {

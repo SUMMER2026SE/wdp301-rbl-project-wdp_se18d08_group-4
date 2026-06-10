@@ -27,7 +27,7 @@ class _PaymentPageState extends State<PaymentPage> {
     super.initState();
     final cubit = context.read<BookingFlowCubit>();
     final s = cubit.state;
-    if (!s.isLaborService) {
+    if (!s.isLaborService && !s.isQuoteBooking) {
       cubit.loadInsurancePlans();
     }
   }
@@ -89,30 +89,47 @@ class _PaymentPageState extends State<PaymentPage> {
                       state.destination.isEmpty ? 'Căn hộ Landmark 81' : state.destination,
                       c,
                     ),
+                    if (!state.isLaborService && state.hasScheduledPickup) ...[
+                      SizedBox(height: 12.h),
+                      _tripRow(Icons.schedule, c.primary, 'Lấy đồ: ${state.scheduledPickupLabel}', c),
+                    ],
+                    SizedBox(height: 12.h),
+                    if (!state.isLaborService && (state.isComboBooking || state.isQuoteBooking)) ...[
+                      SizedBox(height: 12.h),
+                      _dormDetailsCard(c, state),
+                    ],
                     SizedBox(height: 12.h),
                     Wrap(
                       spacing: 8.w,
                       runSpacing: 8.h,
                       children: [
                         if (!state.isLaborService) ...[
-                          _chip(
-                            'Combo: ${state.selectedPackage?.label ?? 'Chưa chọn'}',
-                            Icons.inventory_2_outlined,
-                            c,
-                          ),
-                          if (state.extraComboLaborCount > 0)
+                          if (state.isComboBooking)
                             _chip(
-                              '+${state.extraComboLaborCount} người khuân vác',
+                              'Combo: ${state.selectedPackage?.label ?? 'Chưa chọn'}',
+                              Icons.inventory_2_outlined,
+                              c,
+                            )
+                          else if (state.isQuoteBooking)
+                            _chip('Báo giá đã chốt', Icons.request_quote_outlined, c)
+                          else
+                            _chip('Chuyến linh hoạt', Icons.tune_rounded, c),
+                          if (state.isComboBooking && state.effectiveComboLaborCount > 0)
+                            _chip(
+                              '${state.effectiveComboLaborCount} người khuân vác (combo)',
                               Icons.groups_outlined,
                               c,
                             ),
-                          _chip(
-                            state.hasInsuranceCoverage
-                                ? 'BH: ${state.selectedInsurancePlan?.name ?? ''}'
-                                : 'Không bảo hiểm đồ',
-                            Icons.shield_outlined,
-                            c,
-                          ),
+                          if (state.hasScheduledPickup)
+                            _chip(state.scheduledPickupLabel, Icons.event_outlined, c),
+                          if (!state.isQuoteBooking)
+                            _chip(
+                              state.hasInsuranceCoverage
+                                  ? 'BH: ${state.selectedInsurancePlan?.name ?? ''}'
+                                  : 'Không bảo hiểm đồ',
+                              Icons.shield_outlined,
+                              c,
+                            ),
                         ],
                         if (state.isLaborService)
                           _chip(
@@ -122,6 +139,8 @@ class _PaymentPageState extends State<PaymentPage> {
                           ),
                         if (state.isLaborService && labor != null)
                           _chip(labor.name, Icons.handyman_outlined, c)
+                        else if (!state.isLaborService && state.isQuoteBooking && state.quoteProviderName != null)
+                          _chip('Nhà xe: ${state.quoteProviderName}', Icons.local_shipping_outlined, c)
                         else if (!state.isLaborService && partner != null)
                           _chip('Nhà xe: ${partner.name}', Icons.local_shipping_outlined, c)
                         else if (!state.isLaborService)
@@ -138,13 +157,34 @@ class _PaymentPageState extends State<PaymentPage> {
                   ],
                 ),
               ),
-              if (!state.isLaborService && partner != null) ...[
+              if (!state.isLaborService && !state.isQuoteBooking && partner != null) ...[
                 SizedBox(height: 12.h),
-                _marketplaceNote(c, partnerName: partner.name),
+                _marketplaceNote(c, partnerName: partner.name, isCombo: state.isComboBooking),
               ],
-              if (!state.isLaborService) ...[
+              if (state.isQuoteBooking) ...[
                 SizedBox(height: 12.h),
-                _laborUpsellCard(context, c),
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: c.chipBg,
+                    borderRadius: BorderRadius.circular(12.r),
+                    border: Border.all(color: c.primary.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.verified_outlined, color: c.primary, size: 20.sp),
+                      SizedBox(width: 10.w),
+                      Expanded(
+                        child: Text(
+                          'Giá đã chốt với ${state.quoteProviderName ?? 'nhà xe'}. '
+                          'Đặt cọc 30% để giữ chỗ — phần còn lại thanh toán sau khi hoàn thành chuyến.',
+                          style: TextStyle(fontSize: 12.sp, color: c.onSurface, height: 1.35),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
               SizedBox(height: 16.h),
               _escrowTrustCard(c, deposit: deposit),
@@ -167,61 +207,107 @@ class _PaymentPageState extends State<PaymentPage> {
                   selected: state.paymentMethod == PaymentMethod.momo),
               _payMethod(context, state, PaymentMethod.otherWallet, 'Ví điện tử khác', null, c,
                   selected: state.paymentMethod == PaymentMethod.otherWallet),
-              SizedBox(height: 16.h),
-              Text(
-                'MÃ GIẢM GIÁ',
-                style: TextStyle(
-                  fontSize: 12.sp,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                  color: c.onSurfaceMuted,
+              if (!state.isQuoteBooking) ...[
+                SizedBox(height: 16.h),
+                Text(
+                  'MÃ GIẢM GIÁ',
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: c.onSurfaceMuted,
+                  ),
                 ),
-              ),
-              SizedBox(height: 8.h),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _discountCtrl,
-                      decoration: InputDecoration(
-                        hintText: 'Nhập mã ưu đãi',
-                        prefixIcon: const Icon(Icons.confirmation_number_outlined),
-                        filled: true,
-                        fillColor: c.surface,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r)),
+                SizedBox(height: 8.h),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _discountCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'Nhập mã ưu đãi',
+                          prefixIcon: const Icon(Icons.confirmation_number_outlined),
+                          filled: true,
+                          fillColor: c.surface,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r)),
+                        ),
+                        onChanged: (v) => context.read<BookingFlowCubit>().setDiscountCode(v),
                       ),
-                      onChanged: (v) => context.read<BookingFlowCubit>().setDiscountCode(v),
                     ),
-                  ),
-                  SizedBox(width: 8.w),
-                  ElevatedButton(
-                    onPressed: () => context.read<BookingFlowCubit>().applyDiscount(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: c.onSurface,
-                      foregroundColor: c.surface,
-                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                    SizedBox(width: 8.w),
+                    ElevatedButton(
+                      onPressed: () => context.read<BookingFlowCubit>().applyDiscount(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: c.onSurface,
+                        foregroundColor: c.surface,
+                        padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                      ),
+                      child: const Text('Áp dụng'),
                     ),
-                    child: const Text('Áp dụng'),
-                  ),
-                ],
-              ),
-              SizedBox(height: 16.h),
+                  ],
+                ),
+                SizedBox(height: 16.h),
+              ],
               _sectionCard(
                 c,
                 title: 'Chi tiết thanh toán',
                 child: Column(
                   children: [
                     if (!state.isLaborService) ...[
-                      _priceRow(
-                        'Combo ${state.selectedPackage?.label ?? 'chuyển trọ'}',
-                        _formatPrice(state.movePackagePrice),
-                        c,
-                      ),
-                      if (state.extraComboLaborCount > 0) ...[
+                      if (state.isQuoteBooking) ...[
                         _priceRow(
-                          '+${state.extraComboLaborCount} người khuân vác (giá combo)',
-                          _formatPrice(state.comboExtraLaborFee),
+                          'Giá cơ bản · ${state.quoteProviderName ?? 'Nhà xe'}',
+                          _formatPrice(state.quoteBasePrice),
+                          c,
+                        ),
+                        ...state.quoteSurcharges.map(
+                          (s) => _priceRow(s.label, _formatPrice(s.amount), c),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 8.h),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Mã báo giá: ${state.quoteReferenceId ?? ''}',
+                              style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.3),
+                            ),
+                          ),
+                        ),
+                      ] else if (state.isComboBooking) ...[
+                        _priceRow(
+                          'Xe+km niêm yết · ${state.selectedPackage?.label ?? 'Combo'}',
+                          _formatPrice(state.movePackagePrice),
+                          c,
+                        ),
+                        if (state.effectiveComboLaborCount > 0) ...[
+                          _priceRow(
+                            'Khuân vác combo · ${state.effectiveComboLaborCount} người',
+                            _formatPrice(state.comboLaborFee),
+                            c,
+                          ),
+                          Padding(
+                            padding: EdgeInsets.only(bottom: 8.h),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Giá khuân vác do ${partner?.name ?? 'nhà xe'} đặt · Xe+km theo niêm yết app',
+                                style: TextStyle(
+                                  fontSize: 12.sp,
+                                  color: c.onSurfaceMuted,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        _priceRow(
+                          partner != null
+                              ? 'Vận chuyển · ${partner.name}'
+                              : 'Vận chuyển (báo giá nhà xe)',
+                          _formatPrice(state.partnerTransportPrice),
                           c,
                         ),
                         Padding(
@@ -229,29 +315,30 @@ class _PaymentPageState extends State<PaymentPage> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              'Tiết kiệm ~${_formatPrice(_comboLaborSavings(state))} so với thuê khuân vác riêng',
+                              'Giá do nhà xe báo theo km & tuyến — linh hoạt hơn combo',
                               style: TextStyle(
                                 fontSize: 12.sp,
-                                color: c.success,
-                                fontWeight: FontWeight.w600,
+                                color: c.onSurfaceMuted,
                                 height: 1.3,
                               ),
                             ),
                           ),
                         ),
                       ],
-                      if (partner != null)
-                        _priceRow('Nhà xe đối tác', partner.name, c),
-                      _priceRow(
-                        state.hasInsuranceCoverage
-                            ? 'Bảo hiểm đồ đạc (${state.selectedInsurancePlan?.name})'
-                            : 'Bảo hiểm đồ đạc',
-                        state.hasInsuranceCoverage
-                            ? _formatPrice(state.insuranceFee)
-                            : 'Không mua',
-                        c,
-                      ),
-                      Align(
+                      if (state.isComboBooking && partner != null)
+                        _priceRow('Nhà xe combo', partner.name, c),
+                      if (!state.isQuoteBooking)
+                        _priceRow(
+                          state.hasInsuranceCoverage
+                              ? 'Bảo hiểm đồ đạc (${state.selectedInsurancePlan?.name})'
+                              : 'Bảo hiểm đồ đạc',
+                          state.hasInsuranceCoverage
+                              ? _formatPrice(state.insuranceFee)
+                              : 'Không mua',
+                          c,
+                        ),
+                      if (!state.isQuoteBooking)
+                        Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
                           onPressed: () => context.push('/booking/insurance'),
@@ -265,12 +352,25 @@ class _PaymentPageState extends State<PaymentPage> {
                     ],
                     if (state.isLaborService) ...[
                       _priceRow(
-                        labor != null
-                            ? '${labor.name} (${state.helperCount}×${state.laborHours}h)'
-                            : 'Khuân vác (${state.helperCount}×${state.laborHours}h)',
+                        state.isLaborAddon
+                            ? 'Khuân vác · ${state.linkedProviderName ?? labor?.name ?? 'Nhà xe'} (${state.helperCount}×${state.laborHours}h)'
+                            : labor != null
+                                ? '${labor.name} (${state.helperCount}×${state.laborHours}h)'
+                                : 'Khuân vác (${state.helperCount}×${state.laborHours}h)',
                         _formatPrice(state.laborQuotedPrice),
                         c,
                       ),
+                      if (state.isLaborAddon)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 8.h),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Giá do nhà xe vận chuyển đã đặt — không dùng đối tác khác',
+                              style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.3),
+                            ),
+                          ),
+                        ),
                       if (state.floorFee > 0 && labor == null)
                         _priceRow('Phụ phí tầng', _formatPrice(state.floorFee), c),
                     ],
@@ -341,6 +441,17 @@ class _PaymentPageState extends State<PaymentPage> {
     setState(() => _submitting = true);
     try {
       final cubit = context.read<BookingFlowCubit>();
+
+      if (state.isQuoteBooking) {
+        await cubit.completeQuoteDeposit();
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đặt cọc thành công — chuyến đã được giữ chỗ')),
+        );
+        context.pop(true);
+        return;
+      }
+
       final orderId = state.isLaborAddon && state.linkedOrderId != null
           ? state.linkedOrderId!
           : await cubit.checkout();
@@ -378,13 +489,7 @@ class _PaymentPageState extends State<PaymentPage> {
     }
   }
 
-  int _comboLaborSavings(BookingFlowState state) {
-    final pkg = state.selectedPackage;
-    if (pkg == null || state.extraComboLaborCount <= 0) return 0;
-    return state.extraComboLaborCount * pkg.laborSavingsPerPerson;
-  }
-
-  Widget _marketplaceNote(UniMoveColors c, {required String partnerName}) {
+  Widget _marketplaceNote(UniMoveColors c, {required String partnerName, required bool isCombo}) {
     return Container(
       padding: EdgeInsets.all(12.w),
       decoration: BoxDecoration(
@@ -399,7 +504,9 @@ class _PaymentPageState extends State<PaymentPage> {
           SizedBox(width: 10.w),
           Expanded(
             child: Text(
-              'Bạn thanh toán qua UniMove. Nhà xe $partnerName thực hiện chuyến — UniMove không trực tiếp vận chuyển.',
+              isCombo
+                  ? 'Combo niêm yết — $partnerName thực hiện theo giá app. UniMove giữ cọc an toàn.'
+                  : 'Chuyến linh hoạt — $partnerName báo giá theo tuyến của bạn. UniMove giữ cọc an toàn.',
               style: TextStyle(fontSize: 12.sp, height: 1.4, color: c.onSurface),
             ),
           ),
@@ -408,51 +515,58 @@ class _PaymentPageState extends State<PaymentPage> {
     );
   }
 
-  Widget _laborUpsellCard(BuildContext context, UniMoveColors c) {
-    return Material(
-      color: c.surface,
-      borderRadius: BorderRadius.circular(14.r),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14.r),
-        onTap: () => context.push('/booking/labor'),
-        child: Container(
-          padding: EdgeInsets.all(14.w),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14.r),
-            border: Border.all(color: c.border),
-          ),
-          child: Row(
+  Widget _dormDetailsCard(UniMoveColors c, BookingFlowState state) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(12.w),
+      decoration: BoxDecoration(
+        color: c.surfaceTint,
+        borderRadius: BorderRadius.circular(12.r),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Container(
-                width: 40.w,
-                height: 40.w,
-                decoration: BoxDecoration(
-                  color: c.accentGreen.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.groups_outlined, color: c.success, size: 22.sp),
+              Icon(Icons.apartment_outlined, size: 16.sp, color: c.primary),
+              SizedBox(width: 6.w),
+              Text(
+                'Mô tả trọ gửi nhà xe',
+                style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w700, color: c.onSurface),
               ),
-              SizedBox(width: 12.w),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Thêm báo giá khuân vác?',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.sp, color: c.onSurface),
-                    ),
-                    SizedBox(height: 2.h),
-                    Text(
-                      'So sánh đội đối tác · gắn vào chuyến hoặc đặt riêng',
-                      style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.3),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right_rounded, color: c.onSurfaceMuted),
             ],
           ),
-        ),
+          SizedBox(height: 8.h),
+          Text(
+            'Trọ cũ: ${state.pickupAccessSummary}',
+            style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted, height: 1.35),
+          ),
+          SizedBox(height: 4.h),
+          Text(
+            'Trọ mới: ${state.destinationAccessSummary}',
+            style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted, height: 1.35),
+          ),
+          SizedBox(height: 4.h),
+          Text(
+            'Đồ: ${state.cargoVolume.label}',
+            style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted, height: 1.35),
+          ),
+          if (state.dormNote.trim().isNotEmpty) ...[
+            SizedBox(height: 4.h),
+            Text(
+              state.dormNote.trim(),
+              style: TextStyle(fontSize: 11.sp, color: c.onSurface, height: 1.35),
+            ),
+          ],
+          if (state.dormImageCount > 0) ...[
+            SizedBox(height: 4.h),
+            Text(
+              '${state.dormImageCount} ảnh đính kèm',
+              style: TextStyle(fontSize: 11.sp, color: c.primary, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -606,9 +720,17 @@ class _PaymentPageState extends State<PaymentPage> {
     return Padding(
       padding: EdgeInsets.only(bottom: 8.h),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 14.sp, color: c.onSurfaceMuted)),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14.sp, color: c.onSurfaceMuted, height: 1.25),
+            ),
+          ),
+          SizedBox(width: 10.w),
           Text(
             value,
             style: TextStyle(

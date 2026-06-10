@@ -12,6 +12,7 @@ async function listOrders(req, res, next) {
     const orders = await ordersService.listOrdersForUser(
       req.user.id,
       profile?.role || req.user.role || 'customer',
+      req.query,
     );
 
     res.json({ success: true, data: orders });

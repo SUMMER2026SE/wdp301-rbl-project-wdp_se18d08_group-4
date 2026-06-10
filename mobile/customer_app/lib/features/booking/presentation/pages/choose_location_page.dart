@@ -4,8 +4,10 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../../../core/constants/app_images.dart';
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/booking_scaffold.dart';
+import '../../../../core/widgets/cached_hero_image.dart';
 import '../../../../core/widgets/smooth_cta_button.dart';
 import '../../../pass_items/data/pass_item_repository.dart';
 import '../../domain/booking_models.dart';
@@ -45,7 +47,9 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
         return BookingScaffold(
           title: state.passItemDelivery
               ? 'Chở đồ về nhà'
-              : (isLabor ? 'Địa điểm làm việc' : 'Trọ cũ → trọ mới'),
+              : (isLabor
+                  ? 'Địa điểm làm việc'
+                  : (state.isComboBooking ? 'Combo chuyển trọ · Địa điểm' : 'Trọ cũ → trọ mới')),
           trailing: CircleAvatar(
             radius: 18.r,
             backgroundColor: c.surfaceTint,
@@ -60,8 +64,19 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
               ],
               _routeCard(context, state, c),
               SizedBox(height: 16.h),
-              if (!isLabor && !state.passItemDelivery) _quoteFlowHint(c),
-              SizedBox(height: 24.h),
+              if (!isLabor && !state.passItemDelivery && !state.isComboBooking) ...[
+                _quoteFlowHint(c),
+                SizedBox(height: 8.h),
+              ],
+              if (!isLabor && !state.passItemDelivery && state.isComboBooking) ...[
+                _comboFlowHint(c),
+                SizedBox(height: 8.h),
+              ],
+              if (state.isComboBooking) ...[
+                CachedHeroImage(url: AppImages.mapPreview, height: 160.h),
+                SizedBox(height: 20.h),
+              ],
+              SizedBox(height: 4.h),
               _recentHeader(c),
               SizedBox(height: 12.h),
               if (state.loadingPlaces)
@@ -74,7 +89,7 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
             child: Padding(
               padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 16.h),
               child: SmoothCtaButton(
-                label: isLabor ? 'Tiếp tục' : 'Mô tả trọ',
+                label: isLabor || state.passItemDelivery ? 'Tiếp tục' : 'Mô tả trọ',
                 onPressed: state.destination.trim().isEmpty
                     ? null
                     : () async {
@@ -83,7 +98,11 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
                         }
                         if (!context.mounted) return;
                         context.push(
-                          isLabor ? '/booking/labor/configure' : '/booking/dorm-details',
+                          isLabor
+                              ? '/booking/labor/configure'
+                              : state.passItemDelivery
+                                  ? '/booking/partners'
+                                  : '/booking/dorm-details',
                         );
                       },
               ),
@@ -125,8 +144,32 @@ class _ChooseLocationPageState extends State<ChooseLocationPage> {
           ),
           SizedBox(height: 8.h),
           Text(
-            'Bước tiếp: mô tả tầng, hẻm, khối lượng đồ. Nhà xe báo giá + phụ phí ngay trên app.',
+            'Bước tiếp: mô tả trọ → chọn giờ mong muốn → nhà xe báo giá theo khung đó.',
             style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _comboFlowHint(UniMoveColors c) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+      decoration: BoxDecoration(
+        color: c.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: c.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.savings_outlined, size: 20.sp, color: c.primary),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              'Combo — giá niêm yết, không chờ báo giá. Bước sau: mô tả trọ → chọn ngày giờ → chọn gói.',
+              style: TextStyle(fontSize: 12.sp, color: c.onSurface, height: 1.4),
+            ),
           ),
         ],
       ),

@@ -1,3 +1,5 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 // Project URL
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://byqwsmdgyojzgyhbladx.supabase.co';
 
@@ -16,10 +18,15 @@ const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '635138172262225';
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || 'VbCe8dGdXxulLTNsBHjbddSjI4Q';
 const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || 'unimove_preset';
 
-// PayOS
+// PayOS — Merchant API v2: https://api-merchant.payos.vn/v2
 const PAYOS_CLIENT_ID = process.env.PAYOS_CLIENT_ID || '';
 const PAYOS_API_KEY = process.env.PAYOS_API_KEY || '';
 const PAYOS_CHECKSUM_KEY = process.env.PAYOS_CHECKSUM_KEY || '';
+const PAYOS_API_URL = process.env.PAYOS_API_URL || 'https://api-merchant.payos.vn/v2';
+
+// Application URLs
+const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+const API_URL = process.env.API_URL || `http://localhost:${process.env.PORT || 3000}`;
 
 // Google Maps
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
@@ -70,6 +77,9 @@ module.exports = {
   PAYOS_CLIENT_ID,
   PAYOS_API_KEY,
   PAYOS_CHECKSUM_KEY,
+  PAYOS_API_URL,
+  APP_URL,
+  API_URL,
   GOOGLE_MAPS_API_KEY,
   GOOGLE_CLIENT_ID,
   PORT,

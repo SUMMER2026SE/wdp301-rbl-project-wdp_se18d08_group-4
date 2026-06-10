@@ -273,12 +273,10 @@ async function updateMyProfile(providerId, payload) {
   if (Object.keys(ppFields).length > 1) {
     let dbError;
     if (ppFields.business_name !== undefined) {
-      // business_name có trong payload → upsert an toàn (tạo mới nếu chưa có)
       ({ error: dbError } = await supabaseAdmin
         .from('provider_profiles')
         .upsert(ppFields, { onConflict: 'id' }));
     } else {
-      // Không có business_name → chỉ update row đã tồn tại, tránh vi phạm NOT NULL khi INSERT
       const { id, ...updateFields } = ppFields;
       ({ error: dbError } = await supabaseAdmin
         .from('provider_profiles')

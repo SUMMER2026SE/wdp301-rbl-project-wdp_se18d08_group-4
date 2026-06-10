@@ -1,4 +1,7 @@
+import '../../features/booking/domain/booking_models.dart';
+import '../../features/booking/presentation/cubit/booking_flow_state.dart';
 import '../../features/chat/domain/chat_models.dart';
+import '../../features/orders/data/order_api_mapper.dart';
 import '../../features/orders/domain/order_models.dart';
 import 'mock_customer_data.dart';
 
@@ -14,6 +17,53 @@ abstract final class MockOrdersData {
   static const providerName = 'Minh Quân';
   static const providerPlate = '29A-123.45';
   static const providerRating = 4.9;
+
+  static final Map<String, CustomerOrder> _placedOrders = {};
+
+  static String placeBookingOrder(BookingFlowState state) {
+    final id = 'b${DateTime.now().millisecondsSinceEpoch.remainder(1000000000)}';
+    final partner = state.selectedPartner;
+    final pkg = state.selectedPackage;
+    final order = CustomerOrder(
+      id: id,
+      orderNumber: 'UM-${id.substring(id.length - 5)}',
+      customerId: MockCustomerData.userId,
+      providerId: partner?.id,
+      status: OrderStatus.pending,
+      packageLabel: switch (state.selectedTier) {
+        ServiceTier.premium => ServicePackageLabel.premium,
+        ServiceTier.economy => ServicePackageLabel.economy,
+        _ => ServicePackageLabel.standard,
+      },
+      vehicleLabel: partner?.vehicleLabel ?? pkg?.label ?? 'Xe tải',
+      pickupAddress: state.pickup,
+      deliveryAddress: state.destination.isEmpty ? 'Chưa nhập điểm đến' : state.destination,
+      totalPrice: state.total,
+      createdAt: DateTime.now(),
+      scheduledPickupAt: state.scheduledPickupAt,
+      providerName: partner?.name,
+      providerRating: partner?.rating,
+      providerPlate: providerPlate,
+    );
+    _placedOrders[id] = order;
+    return id;
+  }
+
+  static CustomerOrder? orderById(String id) {
+    final placed = _placedOrders[id];
+    if (placed != null) return placed;
+    try {
+      return orders.firstWhere((o) => o.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<CustomerOrder> get allOrders {
+    final merged = <CustomerOrder>[..._placedOrders.values, ...orders];
+    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return merged;
+  }
 
   static final List<CustomerOrder> orders = [
     CustomerOrder(
@@ -129,20 +179,7 @@ abstract final class MockOrdersData {
   ];
 
   static TrackingSnapshot trackingFor(String orderId) {
-    final order = orders.firstWhere((o) => o.id == orderId, orElse: () => orders.first);
-    return TrackingSnapshot(
-      order: order,
-      etaMinutes: order.etaMinutes ?? 5,
-      distanceKm: order.estimatedDistanceKm ?? 1.2,
-      driverLat: 10.762622,
-      driverLng: 106.660172,
-      statusLabel: 'In Progress',
-      steps: const [
-        TrackingStep(key: 'received', label: 'Đã nhận', done: true, active: false),
-        TrackingStep(key: 'coming', label: 'Đang đến', done: false, active: true),
-        TrackingStep(key: 'moving', label: 'Đang chuyển', done: false, active: false),
-        TrackingStep(key: 'done', label: 'Hoàn thành', done: false, active: false),
-      ],
-    );
+    final order = orderById(orderId) ?? orders.first;
+    return OrderApiMapper.trackingFromOrder(order);
   }
 }

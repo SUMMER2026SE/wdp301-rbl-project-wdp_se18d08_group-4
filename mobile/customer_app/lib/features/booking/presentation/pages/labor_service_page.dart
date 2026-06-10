@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/booking_scaffold.dart';
-import '../../../../core/widgets/pressable_scale.dart';
+import '../../../../core/widgets/smooth_cta_button.dart';
 import '../../data/labor_repository.dart';
 import '../../domain/booking_models.dart';
-import '../cubit/booking_flow_cubit.dart';
 
-/// Giới thiệu dịch vụ thuê người khuân vác — UniMove marketplace.
+/// Thêm khuân vác vào đơn chuyển trọ đã đặt — chỉ qua nhà xe vận chuyển.
 class LaborServicePage extends StatefulWidget {
   const LaborServicePage({super.key});
 
@@ -41,15 +39,6 @@ class _LaborServicePageState extends State<LaborServicePage> {
     }
   }
 
-  void _startStandalone() {
-    context.read<BookingFlowCubit>().startLaborOnlyBooking();
-    context.push('/booking/location');
-  }
-
-  void _startAddon() {
-    context.push('/booking/labor/orders');
-  }
-
   String _formatPrice(int v) {
     final s = v.toString();
     final buf = StringBuffer();
@@ -65,8 +54,20 @@ class _LaborServicePageState extends State<LaborServicePage> {
     final c = UniMoveColors.of(context);
 
     return BookingScaffold(
-      title: 'Khuân vác',
+      title: 'Thêm khuân vác',
       body: _loading ? _buildShimmer(c) : _buildContent(c),
+      bottom: _loading
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 16.h),
+                child: SmoothCtaButton(
+                  label: 'Chọn đơn chuyển trọ',
+                  showArrow: false,
+                  onPressed: () => context.push('/booking/labor/orders'),
+                ),
+              ),
+            ),
     );
   }
 
@@ -77,9 +78,15 @@ class _LaborServicePageState extends State<LaborServicePage> {
       child: ListView(
         padding: EdgeInsets.all(20.w),
         children: [
-          Container(height: 120.h, decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16.r))),
+          Container(
+            height: 120.h,
+            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16.r)),
+          ),
           SizedBox(height: 16.h),
-          Container(height: 80.h, decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(12.r))),
+          Container(
+            height: 80.h,
+            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(12.r)),
+          ),
         ],
       ),
     );
@@ -134,26 +141,7 @@ class _LaborServicePageState extends State<LaborServicePage> {
           ),
         ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.04, end: 0),
         SizedBox(height: 16.h),
-        Text(
-          'Chọn hình thức',
-          style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700, color: c.onSurface),
-        ),
-        SizedBox(height: 10.h),
-        _flowCard(
-          c,
-          icon: Icons.person_pin_circle_outlined,
-          title: 'Đặt riêng — không cần xe',
-          subtitle: 'Chỉ thuê người khuân vác, so sánh giá nhiều đối tác',
-          onTap: _startStandalone,
-        ),
-        SizedBox(height: 10.h),
-        _flowCard(
-          c,
-          icon: Icons.add_link_rounded,
-          title: 'Thêm vào đơn chuyển trọ',
-          subtitle: 'Gắn với đơn đang chạy · phối hợp nhà xe đã đặt',
-          onTap: _startAddon,
-        ),
+        _infoBanner(c),
         SizedBox(height: 16.h),
         Text(
           info.description,
@@ -161,7 +149,7 @@ class _LaborServicePageState extends State<LaborServicePage> {
         ).animate().fadeIn(duration: 300.ms, delay: 80.ms),
         SizedBox(height: 20.h),
         Text(
-          'Lợi ích',
+          'Cách hoạt động',
           style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700, color: c.onSurface),
         ),
         SizedBox(height: 12.h),
@@ -192,58 +180,31 @@ class _LaborServicePageState extends State<LaborServicePage> {
           title: 'Phụ phí tầng',
           subtitle: '${_formatPrice(LaborPricing.perFloorNoElevator)}/tầng nếu không có thang máy',
         ),
-        SizedBox(height: 10.h),
-        _infoTile(
-          c,
-          icon: Icons.verified_user_outlined,
-          title: 'Đội khuân vác đối tác',
-          subtitle: 'Đã xác minh · Bạn chọn báo giá trên marketplace',
-        ),
       ],
     );
   }
 
-  Widget _flowCard(
-    UniMoveColors c, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return PressableScale(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.all(14.w),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14.r),
-          border: Border.all(color: c.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44.w,
-              height: 44.w,
-              decoration: BoxDecoration(
-                color: c.primary.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: c.primary),
+  Widget _infoBanner(UniMoveColors c) {
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: c.chipBg,
+        borderRadius: BorderRadius.circular(12.r),
+        border: Border.all(color: c.primary.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, color: c.primary, size: 20.sp),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              'Bạn không thể thuê khuân vác riêng khi đang đặt xe. '
+              'Chỉ sau khi đã có đơn vận chuyển, bạn mới thêm khuân vác — và chỉ từ nhà xe đó.',
+              style: TextStyle(fontSize: 12.sp, color: c.onSurface, height: 1.4),
             ),
-            SizedBox(width: 12.w),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.sp, color: c.onSurface)),
-                  SizedBox(height: 2.h),
-                  Text(subtitle, style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.3)),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: c.onSurfaceMuted),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

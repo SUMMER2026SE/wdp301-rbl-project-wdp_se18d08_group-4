@@ -27,13 +27,6 @@ class ActivityHistoryItem extends StatelessWidget {
     return '$h:$m, ${dt.day} thg ${dt.month} ${dt.year}';
   }
 
-  static String routeTitle(CustomerOrder order) {
-    final from = order.pickupAddress.trim();
-    final label = from.isEmpty ? order.packageDisplay : 'Từ $from';
-    if (label.length <= 52) return label;
-    return '${label.substring(0, 52)}...';
-  }
-
   String get _actionLabel => switch (order.status) {
         OrderStatus.pending ||
         OrderStatus.accepted ||
@@ -77,7 +70,7 @@ class ActivityHistoryItem extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          routeTitle(order),
+                          order.activityRouteTitle,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -103,12 +96,14 @@ class ActivityHistoryItem extends StatelessWidget {
                   ),
                   SizedBox(height: 4.h),
                   Text(
-                    formatTime(time),
+                    '${order.activityMetaLine} · ${formatTime(time)}',
                     style: TextStyle(
                       fontSize: 13.sp,
                       color: c.onSurfaceMuted,
                       decoration: TextDecoration.none,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   SizedBox(height: 6.h),
                   GestureDetector(

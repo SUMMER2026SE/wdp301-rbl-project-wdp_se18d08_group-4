@@ -92,7 +92,7 @@ class _InsuranceSelectionPageState extends State<InsuranceSelectionPage> {
                     SizedBox(height: 10.h),
                   ],
                   SmoothCtaButton(
-                    label: 'Tiếp tục thanh toán',
+                    label: 'Tiếp tục',
                     onPressed: state.selectedInsurancePlanId == null
                         ? null
                         : () => context.push('/booking/payment'),

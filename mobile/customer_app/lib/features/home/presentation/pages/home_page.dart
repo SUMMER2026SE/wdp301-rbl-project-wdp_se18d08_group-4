@@ -7,8 +7,6 @@ import '../../../orders/data/customer_orders_repository.dart';
 import '../../../orders/domain/order_models.dart';
 import '../../../../core/auth/auth_token_storage.dart';
 import '../../../auth/data/customer_auth_repository.dart';
-import '../../../notifications/data/notifications_repository.dart';
-import '../../../notifications/presentation/pages/messages_tab_page.dart';
 import '../../../booking/presentation/cubit/booking_flow_cubit.dart';
 import '../../../chat/domain/active_chat_context.dart';
 import '../../../../core/mock/mock_auth_session.dart';
@@ -27,19 +25,11 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String _userName = '';
-  int _unreadCount = 0;
-  final _notifRepo = NotificationsRepository();
 
   @override
   void initState() {
     super.initState();
     _loadProfileName();
-    _loadUnreadCount();
-  }
-
-  Future<void> _loadUnreadCount() async {
-    final count = await _notifRepo.unreadCount();
-    if (mounted) setState(() => _unreadCount = count);
   }
 
   static String _greetingFirstName(String fullName) {
@@ -145,56 +135,12 @@ class _HomePageState extends State<HomePage> {
             Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: () async {
-                  await Navigator.of(context, rootNavigator: true).push(
-                    MaterialPageRoute(
-                      builder: (_) => Scaffold(
-                        backgroundColor: c.background,
-                        appBar: AppBar(
-                          backgroundColor: c.background,
-                          elevation: 0,
-                          scrolledUnderElevation: 0,
-                          surfaceTintColor: Colors.transparent,
-                          iconTheme: IconThemeData(color: c.onSurface),
-                          title: Text('Thông báo',
-                              style: TextStyle(color: c.onSurface, fontWeight: FontWeight.w700)),
-                        ),
-                        body: const MessagesTabPage(showTitle: false),
-                      ),
-                    ),
-                  );
-                  _loadUnreadCount();
-                },
+                onTap: () {},
                 customBorder: const CircleBorder(),
                 child: SizedBox(
                   width: 40,
                   height: 40,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Center(child: Icon(Icons.notifications_outlined, color: c.primary)),
-                      if (_unreadCount > 0)
-                        Positioned(
-                          right: 4,
-                          top: 4,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: AppColors.error,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              _unreadCount > 99 ? '99+' : '$_unreadCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                  child: Icon(Icons.notifications_outlined, color: c.primary),
                 ),
               ),
             ),
@@ -221,7 +167,7 @@ class _HomePageState extends State<HomePage> {
               FadeSlideIn(
                 delay: const Duration(milliseconds: 140),
                 child: Text(
-                  'Chuyển trọ thông minh · Mô tả trọ, nhận báo giá minh bạch',
+                  'So sánh báo giá nhà xe · Đặt cọc an toàn qua UniMove',
                   style: TextStyle(fontSize: 16, color: c.onSurfaceMuted),
                 ),
               ),
@@ -246,7 +192,7 @@ class _HomePageState extends State<HomePage> {
                 child: _MainServiceCard(
                   colors: c,
                   onTap: () {
-                    context.read<BookingFlowCubit>().startFullMoveBooking();
+                    context.read<BookingFlowCubit>().startComboBooking();
                     context.push('/booking/location');
                   },
                 ),
@@ -273,8 +219,8 @@ class _HomePageState extends State<HomePage> {
                           colors: c,
                           icon: Icons.route_outlined,
                           useSecondaryIconBg: true,
-                          title: 'Gửi yêu cầu',
-                          subtitle: 'Trọ cũ → trọ mới',
+                          title: 'Đặt chuyến',
+                          subtitle: 'Chọn điểm đón & đến',
                           onTap: () {
                             context.read<BookingFlowCubit>().startFullMoveBooking();
                             context.push('/booking/location');
@@ -288,7 +234,7 @@ class _HomePageState extends State<HomePage> {
                           icon: Icons.groups_outlined,
                           useSecondaryIconBg: false,
                           title: 'Khuân vác',
-                          subtitle: 'Thuê đội · so sánh giờ',
+                          subtitle: 'Thêm vào đơn đã đặt',
                           onTap: () => context.push('/booking/labor'),
                         ),
                       ),
@@ -368,7 +314,7 @@ class _SearchBar extends StatelessWidget {
       },
       child: AbsorbPointer(
         child: ShadInput(
-          placeholder: const Text('Trọ mới của bạn ở đâu?'),
+          placeholder: const Text('Bạn muốn chuyển đến đâu?'),
           leading: Icon(LucideIcons.search, size: 18, color: colors.primary),
         ),
       ),
@@ -418,7 +364,7 @@ class _MainServiceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Chuyển trọ thông minh',
+                    'Marketplace · Đã xác minh',
                     style: TextStyle(
                       color: isDark ? colors.onPrimaryContainer : colors.primary,
                       fontSize: 12,
@@ -427,7 +373,7 @@ class _MainServiceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Gửi yêu cầu báo giá',
+                    'Combo chuyển trọ',
                     style: TextStyle(
                       color: isDark ? AppColors.onPrimary : colors.onSurface,
                       fontSize: 20,
@@ -437,7 +383,7 @@ class _MainServiceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Mô tả trọ → nhà xe báo giá, so sánh & chốt trên app',
+                    'Tiết kiệm nhất · Chuyến chuẩn · Giá niêm yết',
                     style: TextStyle(
                       color: isDark ? colors.onPrimaryContainer : colors.onSurfaceMuted,
                       fontSize: 14,
@@ -598,7 +544,7 @@ class _FlashSaleBanner extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'Phụ phí minh bạch',
+                          'Chuyến không vừa combo?',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -610,7 +556,7 @@ class _FlashSaleBanner extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'Hẻm hẹp · tầng · đồ thêm — báo trước khi chốt',
+                          'Đặt linh hoạt · So sánh báo giá nhà xe',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.25),
@@ -620,12 +566,15 @@ class _FlashSaleBanner extends StatelessWidget {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(99),
                           child: InkWell(
-                            onTap: () => context.push('/booking/reference-prices'),
+                            onTap: () {
+                              context.read<BookingFlowCubit>().startFullMoveBooking();
+                              context.push('/booking/location');
+                            },
                             borderRadius: BorderRadius.circular(99),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                               child: Text(
-                                'Xem bảng phụ phí',
+                                'Đặt chuyến',
                                 style: TextStyle(
                                   color: colors.primary,
                                   fontWeight: FontWeight.w600,

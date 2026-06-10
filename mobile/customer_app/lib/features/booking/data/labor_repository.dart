@@ -4,12 +4,13 @@ class LaborRepository {
   Future<LaborServiceInfo> fetchServiceInfo() async {
     await Future<void>.delayed(const Duration(milliseconds: 80));
     return const LaborServiceInfo(
-      title: 'Thuê người khuân vác',
+      title: 'Thêm khuân vác vào đơn',
       description:
-          'UniMove là nền tảng trung gian — bạn nhận nhiều báo giá từ các đội khuân vác & có thể kết hợp với nhà xe đã chọn.',
+          'Đã đặt xe nhưng quên thuê người khuân? Bạn có thể bổ sung vào đơn chuyển trọ — '
+          'chỉ với đội khuân vác của nhà xe đã đặt.',
       benefits: [
-        'Đặt riêng hoặc thêm vào đơn chuyển trọ đang có',
-        'So sánh báo giá nhiều đội trên marketplace',
+        'Chỉ thêm sau khi đã có đơn vận chuyển',
+        'Đội khuân vác do chính nhà xe cung cấp — phối hợp đồng bộ',
         'Minh bạch số người · giờ · phụ phí tầng',
         'Cọc qua UniMove — giữ an toàn đến khi hoàn thành',
       ],
@@ -17,15 +18,21 @@ class LaborRepository {
     );
   }
 
-  /// Báo giá từ nhiều bên — giá thay đổi theo cấu hình người dùng.
+  /// Báo giá từ nhiều bên — giá do đối tác đặt, thay đổi theo cấu hình.
   Future<List<LaborProviderQuote>> fetchLaborQuotes({
     required int helperCount,
     required int laborHours,
     required int floorFee,
     bool forExistingOrder = false,
+    /// Thuê riêng ngoài combo — giá cao hơn giá combo.
+    bool retailMode = false,
+    int? comboLaborUnitPrice,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 220));
-    final base = helperCount * laborHours * LaborPricing.perHelperPerHour + floorFee;
+    final unitRate = retailMode
+        ? (comboLaborUnitPrice ?? LaborPricing.perHelperPerHour) + 35000
+        : LaborPricing.perHelperPerHour;
+    final base = helperCount * laborHours * unitRate + floorFee;
 
     return [
       LaborProviderQuote(
@@ -94,5 +101,35 @@ class LaborRepository {
         canCombineWithTransport: true,
       ),
     ]..sort((a, b) => a.price.compareTo(b.price));
+  }
+
+  /// Báo giá khuân vác từ nhà xe vận chuyển đã đặt — không dùng đối tác khác.
+  Future<LaborProviderQuote> fetchTransportProviderLaborQuote({
+    required String? providerId,
+    required String providerName,
+    required int helperCount,
+    required int laborHours,
+    required int floorFee,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    final unitRate = switch (providerId) {
+      'p1' => 60000,
+      'p2' => 62000,
+      'p3' => 68000,
+      _ => LaborPricing.perHelperPerHour + 10000,
+    };
+    final base = helperCount * laborHours * unitRate + floorFee;
+
+    return LaborProviderQuote(
+      id: 'transport-labor-${providerId ?? 'linked'}',
+      name: providerName,
+      teamLabel: 'Đội khuân vác của nhà xe · phối hợp cùng chuyến',
+      rating: 4.8,
+      reviewCount: 0,
+      price: base,
+      etaMinutes: 0,
+      badge: 'Nhà xe bạn đã đặt',
+      canCombineWithTransport: true,
+    );
   }
 }

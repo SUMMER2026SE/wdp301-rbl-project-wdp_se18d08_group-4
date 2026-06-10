@@ -136,25 +136,44 @@ class _LaborConfigurePageState extends State<LaborConfigurePage> {
                 ),
               ),
               SizedBox(height: 24.h),
-              Text(
-                'Chọn báo giá từ đối tác',
-                style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w800, color: c.onSurface),
-              ),
-              SizedBox(height: 4.h),
-              Text(
-                canLoadQuotes
-                    ? 'So sánh giá nhiều bên — bấm một dòng để chọn'
-                    : 'Chọn địa điểm trước để nhận báo giá',
-                style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
-              ),
-              SizedBox(height: 12.h),
-              if (canLoadQuotes)
-                LaborQuotesSection(
-                  state: state,
-                  onSelect: cubit.selectLaborProvider,
-                )
-              else
-                _needAddressHint(c),
+              if (state.isLaborAddon) ...[
+                Text(
+                  'Báo giá khuân vác',
+                  style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w800, color: c.onSurface),
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  'Chỉ đội khuân vác của nhà xe bạn đã đặt — không dùng đối tác khác.',
+                  style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+                ),
+                SizedBox(height: 12.h),
+                if (state.loadingLaborQuotes)
+                  Center(child: Padding(padding: EdgeInsets.all(16.h), child: CircularProgressIndicator(color: c.primary)))
+                else if (selected != null)
+                  _transportLaborCard(c, selected)
+                else
+                  _needAddressHint(c),
+              ] else ...[
+                Text(
+                  'Chọn báo giá từ đối tác',
+                  style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w800, color: c.onSurface),
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  canLoadQuotes
+                      ? 'So sánh giá nhiều bên — bấm một dòng để chọn'
+                      : 'Chọn địa điểm trước để nhận báo giá',
+                  style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
+                ),
+                SizedBox(height: 12.h),
+                if (canLoadQuotes)
+                  LaborQuotesSection(
+                    state: state,
+                    onSelect: cubit.selectLaborProvider,
+                  )
+                else
+                  _needAddressHint(c),
+              ],
             ],
           ),
           bottom: SafeArea(
@@ -164,7 +183,7 @@ class _LaborConfigurePageState extends State<LaborConfigurePage> {
                 label: state.loadingLaborQuotes
                     ? 'Đang lấy báo giá...'
                     : selected == null
-                        ? 'Chọn một đội khuân vác ở trên'
+                        ? (state.isLaborAddon ? 'Chưa có báo giá nhà xe' : 'Chọn một đội khuân vác ở trên')
                         : 'Tiếp tục · ${LaborQuotesSection.formatPrice(selected.price)}',
                 showArrow: false,
                 onPressed: !canLoadQuotes || state.loadingLaborQuotes || selected == null
@@ -175,6 +194,58 @@ class _LaborConfigurePageState extends State<LaborConfigurePage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _transportLaborCard(UniMoveColors c, LaborProviderQuote quote) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: c.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: c.primary.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.local_shipping_outlined, color: c.primary, size: 20.sp),
+              SizedBox(width: 8.w),
+              Expanded(
+                child: Text(
+                  quote.name,
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15.sp, color: c.onSurface),
+                ),
+              ),
+              Text(
+                LaborQuotesSection.formatPrice(quote.price),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16.sp, color: c.primary),
+              ),
+            ],
+          ),
+          SizedBox(height: 6.h),
+          Text(
+            quote.teamLabel,
+            style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+          ),
+          if (quote.badge != null) ...[
+            SizedBox(height: 8.h),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+              decoration: BoxDecoration(
+                color: c.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6.r),
+              ),
+              child: Text(
+                quote.badge!,
+                style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.w700, color: c.primary),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -213,7 +284,9 @@ class _LaborConfigurePageState extends State<LaborConfigurePage> {
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.sp, color: c.onSurface),
                 ),
                 Text(
-                  'UniMove phối hợp nhà xe — chọn đội khuân vác bên dưới',
+                  state.linkedProviderName != null
+                      ? 'Khuân vác do ${state.linkedProviderName} cung cấp'
+                      : 'Khuân vác do nhà xe vận chuyển cung cấp',
                   style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.3),
                 ),
               ],

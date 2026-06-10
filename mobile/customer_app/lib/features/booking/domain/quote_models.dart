@@ -73,6 +73,19 @@ class QuoteSurchargeLine {
   final int amount;
 }
 
+/// Mức độ nhà xe có thể nhận giờ khách yêu cầu.
+enum QuoteScheduleFit {
+  exactMatch,
+  alternateProposed,
+  unavailable;
+
+  String get label => switch (this) {
+        QuoteScheduleFit.exactMatch => 'Nhận đúng giờ bạn chọn',
+        QuoteScheduleFit.alternateProposed => 'Đề xuất giờ khác',
+        QuoteScheduleFit.unavailable => 'Không nhận khung giờ này',
+      };
+}
+
 /// Báo giá từ một nhà xe / provider.
 class ProviderQuoteResponse {
   const ProviderQuoteResponse({
@@ -89,6 +102,9 @@ class ProviderQuoteResponse {
     required this.surcharges,
     this.recentReviews = const [],
     this.note = '',
+    this.scheduleFit = QuoteScheduleFit.exactMatch,
+    this.proposedPickupAt,
+    this.proposedPickupLabel,
   });
 
   final String id;
@@ -104,6 +120,11 @@ class ProviderQuoteResponse {
   final List<QuoteSurchargeLine> surcharges;
   final List<ProviderReview> recentReviews;
   final String note;
+  final QuoteScheduleFit scheduleFit;
+  final DateTime? proposedPickupAt;
+  final String? proposedPickupLabel;
+
+  bool get canConfirmSchedule => scheduleFit != QuoteScheduleFit.unavailable;
 
   int get surchargeTotal => surcharges.fold(0, (sum, s) => sum + s.amount);
 
@@ -153,6 +174,11 @@ class QuoteRequestSnapshot {
     this.conversationId,
     this.imageUrls = const [],
     this.dormNote = '',
+    this.wantsTransportLabor = false,
+    this.transportLaborHelpers = 2,
+    this.transportLaborHours = 2,
+    this.requestedPickupAt,
+    this.requestedPickupLabel,
     this.scheduledPickupAt,
     this.scheduledSlotLabel,
     this.depositPaidAt,
@@ -169,11 +195,31 @@ class QuoteRequestSnapshot {
   final String? conversationId;
   final List<String> imageUrls;
   final String dormNote;
+  final bool wantsTransportLabor;
+  final int transportLaborHelpers;
+  final int transportLaborHours;
+
+  String? get transportLaborLabel => wantsTransportLabor
+      ? '$transportLaborHelpers người · $transportLaborHours giờ'
+      : null;
+
+  /// Giờ mong muốn khách chọn trước khi gửi báo giá.
+  final DateTime? requestedPickupAt;
+  final String? requestedPickupLabel;
+
+  /// Giờ đã được nhà xe xác nhận (có thể trùng requested hoặc giờ đề xuất).
   final DateTime? scheduledPickupAt;
   final String? scheduledSlotLabel;
   final DateTime? depositPaidAt;
 
+  bool get hasRequestedPickup => requestedPickupAt != null;
+
   bool get hasScheduledMove => scheduledPickupAt != null;
+
+  bool get pendingAlternateSchedule =>
+      status == QuoteProgressStatus.providerConfirmed &&
+      confirmedQuote?.scheduleFit == QuoteScheduleFit.alternateProposed &&
+      scheduledPickupAt == null;
 
   bool get isMoveDay {
     final at = scheduledPickupAt;
@@ -213,9 +259,16 @@ class QuoteRequestSnapshot {
     String? confirmedQuoteId,
     String? orderId,
     String? conversationId,
+    DateTime? requestedPickupAt,
+    String? requestedPickupLabel,
     DateTime? scheduledPickupAt,
     String? scheduledSlotLabel,
     DateTime? depositPaidAt,
+    bool? wantsTransportLabor,
+    int? transportLaborHelpers,
+    int? transportLaborHours,
+    bool clearConfirmedQuote = false,
+    bool clearScheduled = false,
   }) {
     return QuoteRequestSnapshot(
       id: id,
@@ -224,14 +277,36 @@ class QuoteRequestSnapshot {
       destination: destination,
       createdAt: createdAt,
       quotes: quotes ?? this.quotes,
-      confirmedQuoteId: confirmedQuoteId ?? this.confirmedQuoteId,
+      confirmedQuoteId:
+          clearConfirmedQuote ? null : (confirmedQuoteId ?? this.confirmedQuoteId),
       orderId: orderId ?? this.orderId,
       conversationId: conversationId ?? this.conversationId,
       imageUrls: imageUrls,
       dormNote: dormNote,
-      scheduledPickupAt: scheduledPickupAt ?? this.scheduledPickupAt,
-      scheduledSlotLabel: scheduledSlotLabel ?? this.scheduledSlotLabel,
+      wantsTransportLabor: wantsTransportLabor ?? this.wantsTransportLabor,
+      transportLaborHelpers: transportLaborHelpers ?? this.transportLaborHelpers,
+      transportLaborHours: transportLaborHours ?? this.transportLaborHours,
+      requestedPickupAt: requestedPickupAt ?? this.requestedPickupAt,
+      requestedPickupLabel: requestedPickupLabel ?? this.requestedPickupLabel,
+      scheduledPickupAt:
+          clearScheduled ? null : (scheduledPickupAt ?? this.scheduledPickupAt),
+      scheduledSlotLabel:
+          clearScheduled ? null : (scheduledSlotLabel ?? this.scheduledSlotLabel),
       depositPaidAt: depositPaidAt ?? this.depositPaidAt,
     );
   }
+}
+
+String formatQuotePickupLabel(DateTime dt) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final pickedDay = DateTime(dt.year, dt.month, dt.day);
+  final dayLabel = pickedDay == today
+      ? 'Hôm nay'
+      : pickedDay == today.add(const Duration(days: 1))
+          ? 'Ngày mai'
+          : '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+  final h = dt.hour.toString().padLeft(2, '0');
+  final m = dt.minute.toString().padLeft(2, '0');
+  return '$dayLabel · $h:$m';
 }

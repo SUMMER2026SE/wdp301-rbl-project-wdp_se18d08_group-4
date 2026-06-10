@@ -21,10 +21,11 @@ class ServicePackage {
     required this.tier,
     required this.label,
     required this.badge,
-    required this.price,
     required this.features,
     required this.popular,
-    required this.laborIncluded,
+    required this.transportBasePrice,
+    required this.laborSuggested,
+    required this.maxLaborCount,
     required this.includedKm,
     required this.extraKmPrice,
     required this.extraLaborComboPrice,
@@ -35,26 +36,38 @@ class ServicePackage {
   final ServiceTier tier;
   final String label;
   final String badge;
-  final int price;
   final List<PackageFeature> features;
   final bool popular;
 
-  /// Số người khuân vác đã gộp trong combo.
-  final int laborIncluded;
+  /// Giá xe + km niêm yết trên app (cố định, nhà xe combo không được báo giá phần này).
+  final int transportBasePrice;
+
+  /// Số người khuân vác gợi ý mặc định cho quy mô combo.
+  final int laborSuggested;
+
+  /// Số người khuân vác tối đa khách có thể chọn trong combo.
+  final int maxLaborCount;
 
   /// Số km di chuyển đã bao gồm trong giá combo.
   final int includedKm;
 
-  /// Giá mỗi km vượt quá [includedKm] (tham chiếu).
+  /// Giá mỗi km vượt quá [includedKm] — niêm yết combo (rẻ hơn đặt chuyến thường).
   final int extraKmPrice;
 
-  /// Giá thêm 1 người khi đã chọn combo (ưu đãi).
+  /// Giá khuân vác mặc định/người trong combo (nhà xe đăng ký combo chỉ được chỉnh mục này).
   final int extraLaborComboPrice;
 
-  /// Giá tham chiếu nếu thuê khuân vác riêng (để so sánh).
+  /// Giá tham chiếu thuê khuân vác riêng ngoài combo (cao hơn, do đối tác đặt).
   final int extraLaborRetailPrice;
 
   final String subtitle;
+
+  /// Giá tham chiếu tại [laborSuggested] người — hiển thị "từ X".
+  int get referencePrice => priceAtLabor(laborSuggested);
+
+  /// Giá tham chiếu theo số người khách chọn.
+  int priceAtLabor(int laborCount) =>
+      transportBasePrice + laborCount * extraLaborComboPrice;
 
   int get laborSavingsPerPerson => extraLaborRetailPrice - extraLaborComboPrice;
 }
@@ -78,6 +91,8 @@ class PartnerOffer {
     required this.vehicleLabel,
     this.completedTrips = 0,
     this.recentReviews = const [],
+    this.offeredComboTiers = const {},
+    this.comboLaborUnitPrice,
   });
 
   final String id;
@@ -85,11 +100,21 @@ class PartnerOffer {
   final double distanceKm;
   final double rating;
   final int reviewCount;
+
+  /// Giá khởi điểm khi đặt chuyến thường (nhà xe báo giá). Không dùng cho combo niêm yết.
   final int price;
   final String imageUrl;
   final String vehicleLabel;
   final int completedTrips;
   final List<ProviderReview> recentReviews;
+
+  /// Các gói combo nhà xe đã đăng ký — phải theo giá niêm yết xe/km trên app.
+  final Set<ServiceTier> offeredComboTiers;
+
+  /// Giá khuân vác/người trong combo do nhà xe đặt (mục duy nhất được chỉnh).
+  final int? comboLaborUnitPrice;
+
+  bool offersCombo(ServiceTier tier) => offeredComboTiers.contains(tier);
 }
 
 class ProviderReview {
@@ -183,7 +208,7 @@ class CargoInsurancePlan {
   final bool isNoCoverage;
 }
 
-/// Đường vào trọ — quyết định loại xe và phụ phí có thể phát sinh.
+/// Đường vào trọ — nhà xe biết loại xe và phụ phí có thể phát sinh.
 enum AlleyAccess {
   truckOk,
   smallOnly,
@@ -201,11 +226,11 @@ enum AlleyAccess {
         AlleyAccess.truckOk => 'Đường rộng, xe tải ~1 tấn vào cổng được',
         AlleyAccess.smallOnly => 'Hẻm vừa, ba gác hoặc xe tải nhỏ',
         AlleyAccess.motorbikeOnly => 'Hẻm nhỏ, có thể phụ phí khuân bộ',
-        AlleyAccess.unknown => 'Nên chụp ảnh cổng hẻm khi gửi yêu cầu',
+        AlleyAccess.unknown => 'Nên chụp ảnh cổng hẻm để nhà xe chuẩn bị',
       };
 }
 
-/// Khối lượng đồ ước tính.
+/// Khối lượng đồ ước tính trong chuyến chuyển trọ.
 enum CargoVolume {
   light,
   medium,
@@ -226,10 +251,6 @@ enum CargoVolume {
   bool get needsCargoPhoto => this != CargoVolume.light;
 }
 
-extension AlleyAccessPhoto on AlleyAccess {
-  bool get needsAlleyPhoto => this != AlleyAccess.truckOk;
-}
-
 /// Kết quả gửi yêu cầu báo giá.
 class QuoteSubmitResult {
   const QuoteSubmitResult({
@@ -243,25 +264,32 @@ class QuoteSubmitResult {
 
 /// Nhóm ảnh theo từng mục trong form mô tả trọ.
 enum DormPhotoSection {
-  pickupAlley,
-  destinationAlley,
   pickupStairs,
+  pickupAlley,
   destinationStairs,
+  destinationAlley,
   cargo;
 
   String get label => switch (this) {
-        DormPhotoSection.pickupAlley => 'Ảnh hẻm / cổng trọ cũ',
-        DormPhotoSection.destinationAlley => 'Ảnh hẻm / cổng trọ mới',
         DormPhotoSection.pickupStairs => 'Ảnh cầu thang trọ cũ',
+        DormPhotoSection.pickupAlley => 'Ảnh hẻm / cổng trọ cũ',
         DormPhotoSection.destinationStairs => 'Ảnh cầu thang trọ mới',
+        DormPhotoSection.destinationAlley => 'Ảnh hẻm / cổng trọ mới',
         DormPhotoSection.cargo => 'Ảnh đồ cần chuyển',
       };
 
-  String get hint => switch (this) {
-        DormPhotoSection.pickupAlley => 'Chụp cổng hẻm, đường vào điểm lấy đồ',
-        DormPhotoSection.destinationAlley => 'Chụp cổng hẻm, đường vào trọ mới',
-        DormPhotoSection.pickupStairs => 'Chụp cầu thang / hành lang (không có thang máy)',
-        DormPhotoSection.destinationStairs => 'Chụp cầu thang / hành lang (không có thang máy)',
-        DormPhotoSection.cargo => 'Chụp tủ, giường, đồ cồng kềnh',
+  bool isVisible({
+    required bool pickupHasElevator,
+    required AlleyAccess pickupAlley,
+    required bool destinationHasElevator,
+    required AlleyAccess destinationAlley,
+    required CargoVolume cargoVolume,
+  }) =>
+      switch (this) {
+        DormPhotoSection.pickupStairs => !pickupHasElevator,
+        DormPhotoSection.pickupAlley => pickupAlley != AlleyAccess.truckOk,
+        DormPhotoSection.destinationStairs => !destinationHasElevator,
+        DormPhotoSection.destinationAlley => destinationAlley != AlleyAccess.truckOk,
+        DormPhotoSection.cargo => cargoVolume.needsCargoPhoto,
       };
 }

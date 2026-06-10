@@ -23,7 +23,16 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
   @override
   void initState() {
     super.initState();
-    context.read<BookingFlowCubit>().loadPackages();
+    final cubit = context.read<BookingFlowCubit>();
+    if (!cubit.state.isComboBooking) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final dest = cubit.state.destination.trim();
+        context.go(dest.isEmpty ? '/booking/location' : '/booking/partners');
+      });
+      return;
+    }
+    cubit.loadPackages();
   }
 
   @override
@@ -51,10 +60,17 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
               ),
               SizedBox(height: 8.h),
               Text(
-                'Combo gộp xe và đội khuân vác. Thêm người trong combo rẻ hơn thuê khuân vác riêng.',
+                state.isComboBooking
+                    ? 'Giá xe + km niêm yết cố định trên app. Nhà xe combo chỉ được đặt giá khuân vác — rẻ hơn đặt chuyến thường.'
+                    : 'Combo gộp xe và đội khuân vác. Thêm người trong combo rẻ hơn thuê khuân vác riêng.',
                 style: TextStyle(fontSize: 14.sp, color: c.onSurfaceMuted, height: 1.45),
               ),
-              if (state.quickCompareEntry && state.destination.trim().isNotEmpty) ...[
+              if (state.isComboBooking && state.destination.trim().isEmpty) ...[
+                SizedBox(height: 14.h),
+                _needLocationHint(c),
+              ],
+              if ((state.isComboBooking || state.quickCompareEntry) &&
+                  state.destination.trim().isNotEmpty) ...[
                 SizedBox(height: 16.h),
                 _QuickRouteCard(
                   pickup: state.pickup,
@@ -78,10 +94,12 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
                 style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w700, color: c.onSurface),
               ),
               SizedBox(height: 12.h),
-              _benefitRow(Icons.inventory_2_outlined, 'Một lần chọn — xe + người khuân vác', c),
-              _benefitRow(Icons.savings_outlined, 'Thêm người giá ưu đãi so với thuê riêng', c),
-              _benefitRow(Icons.storefront_outlined, 'Nhà xe đối tác đã xác minh', c),
+              _benefitRow(Icons.savings_outlined, 'Tiết kiệm nhất cho chuyến chuẩn trong gói km', c),
+              _benefitRow(Icons.inventory_2_outlined, 'Giá biết trước — xe+km niêm yết cố định', c),
+              _benefitRow(Icons.groups_outlined, 'Khuân vác ưu đãi — rẻ hơn thuê riêng', c),
               _benefitRow(Icons.account_balance_wallet_outlined, 'Cọc giữ an toàn qua UniMove', c),
+              SizedBox(height: 14.h),
+              _customTripLink(context, c),
               SizedBox(height: 16.h),
               CachedHeroImage(url: AppImages.moversPhoto, height: 160.h),
             ],
@@ -121,34 +139,42 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
                     Padding(
                       padding: EdgeInsets.only(top: 2.h),
                       child: Text(
-                        'Gồm ${selected.includedKm} km di chuyển · ${selected.laborIncluded} người khuân vác',
+                        '${selected.includedKm} km · ${state.effectiveComboLaborCount} người khuân vác (giá combo)',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted),
                       ),
                     ),
-                  if (state.extraComboLaborCount > 0)
-                    Padding(
-                      padding: EdgeInsets.only(top: 2.h),
-                      child: Text(
-                        '+${state.extraComboLaborCount} người khuân vác (giá combo)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.sp, color: c.primary),
-                      ),
-                    ),
                   SizedBox(height: 6.h),
+                  if (selected != null) ...[
+                    Text(
+                      'Xe+km: ${_formatPrice(state.movePackagePrice)} · Khuân vác mặc định: ${_formatPrice(state.effectiveComboLaborCount * selected.extraLaborComboPrice)}',
+                      style: TextStyle(fontSize: 10.sp, color: c.onSurfaceMuted),
+                    ),
+                    SizedBox(height: 4.h),
+                  ],
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      'từ ${_formatPrice(estimateTotal)}',
+                      state.isComboBooking
+                          ? _formatPrice(estimateTotal)
+                          : 'từ ${_formatPrice(estimateTotal)}',
                       style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w800, color: c.primary),
                     ),
                   ),
+                  if (state.isComboBooking)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'Niêm yết · nhà xe chỉ khác phần khuân vác',
+                        style: TextStyle(fontSize: 10.sp, color: c.onSurfaceMuted),
+                      ),
+                    ),
                   SizedBox(height: 12.h),
                   SmoothCtaButton(
-                    label: 'Chọn nhà xe cho combo',
-                    onPressed: selected == null
+                    label: 'Chọn nhà xe combo',
+                    onPressed: selected == null ||
+                            (state.isComboBooking && state.destination.trim().isEmpty)
                         ? null
                         : () => context.push('/booking/partners'),
                   ),
@@ -163,7 +189,8 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
 
   Widget _packageCard(BuildContext context, BookingFlowState state, ServicePackage pkg, UniMoveColors c) {
     final selected = state.selectedTier == pkg.tier;
-    final extraCount = selected ? state.extraComboLaborCount : 0;
+    final laborCount = selected ? state.effectiveComboLaborCount : pkg.laborSuggested;
+    final estimatePrice = pkg.priceAtLabor(laborCount);
 
     return Padding(
       padding: EdgeInsets.only(bottom: 14.h),
@@ -221,12 +248,16 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'từ ${_formatPrice(pkg.price)}',
+                selected
+                    ? _formatPrice(estimatePrice)
+                    : 'từ ${_formatPrice(pkg.referencePrice)}',
                 style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w800, color: c.primary),
               ),
             ),
             Text(
-              '/chuyến · ước tính (nhà xe báo giá chốt)',
+              state.isComboBooking
+                  ? '/chuyến · niêm yết (xe+km cố định)'
+                  : '/chuyến · tham chiếu',
               style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
             ),
             SizedBox(height: 10.h),
@@ -240,12 +271,12 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
               runSpacing: 8.h,
               children: [
                 _includeChip(c, Icons.route_outlined, '${pkg.includedKm} km di chuyển'),
-                _includeChip(c, Icons.groups_outlined, '${pkg.laborIncluded} người khuân vác'),
+                _includeChip(c, Icons.groups_outlined, 'Gợi ý ${pkg.laborSuggested} người'),
               ],
             ),
             SizedBox(height: 6.h),
             Text(
-              'Vượt ${pkg.includedKm} km: +${_formatPrice(pkg.extraKmPrice)}/km · Thêm người từ ${_formatPrice(pkg.extraLaborComboPrice)}/người',
+              'Vượt ${pkg.includedKm} km: +${_formatPrice(pkg.extraKmPrice)}/km (niêm yết) · Khuân vác: ${_formatPrice(pkg.extraLaborComboPrice)}/người (nhà xe đặt)',
               style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted, height: 1.35),
             ),
             SizedBox(height: 12.h),
@@ -274,51 +305,24 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
             if (selected) ...[
               SizedBox(height: 12.h),
               Text(
-                'Thêm người khuân vác (giá combo)',
+                'Số người khuân vác (giá combo)',
                 style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: c.onSurface),
               ),
               SizedBox(height: 8.h),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final gap = 8.w;
-                  final itemW = (constraints.maxWidth - gap * 2) / 3;
-                  return Row(
-                    children: [
-                      SizedBox(
-                        width: itemW,
-                        child: _extraLaborButton(
-                          c,
-                          title: 'Không thêm',
-                          subtitle: '0đ',
-                          selected: extraCount == 0,
-                          onTap: () => context.read<BookingFlowCubit>().setExtraComboLaborCount(0),
-                        ),
-                      ),
-                      SizedBox(width: gap),
-                      SizedBox(
-                        width: itemW,
-                        child: _extraLaborButton(
-                          c,
-                          title: '+1 người',
-                          subtitle: _formatPrice(pkg.extraLaborComboPrice),
-                          selected: extraCount == 1,
-                          onTap: () => context.read<BookingFlowCubit>().setExtraComboLaborCount(1),
-                        ),
-                      ),
-                      SizedBox(width: gap),
-                      SizedBox(
-                        width: itemW,
-                        child: _extraLaborButton(
-                          c,
-                          title: '+2 người',
-                          subtitle: _formatPrice(pkg.extraLaborComboPrice * 2),
-                          selected: extraCount == 2,
-                          onTap: () => context.read<BookingFlowCubit>().setExtraComboLaborCount(2),
-                        ),
-                      ),
-                    ],
+              Wrap(
+                spacing: 8.w,
+                runSpacing: 8.h,
+                children: List.generate(pkg.maxLaborCount, (i) {
+                  final count = i + 1;
+                  final active = laborCount == count;
+                  return _laborCountChip(
+                    c,
+                    count: count,
+                    unitPrice: pkg.extraLaborComboPrice,
+                    selected: active,
+                    onTap: () => context.read<BookingFlowCubit>().setComboLaborCount(count),
                   );
-                },
+                }),
               ),
               SizedBox(height: 8.h),
               Container(
@@ -330,9 +334,7 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
                   border: Border.all(color: c.success.withValues(alpha: 0.35)),
                 ),
                 child: Text(
-                  extraCount == 0
-                      ? 'Thuê khuân vác riêng ~${_formatPrice(pkg.extraLaborRetailPrice)}/người · Thêm trong combo từ ${_formatPrice(pkg.extraLaborComboPrice)}/người'
-                      : 'Tiết kiệm ~${_formatPrice(pkg.laborSavingsPerPerson * extraCount)} so với thuê riêng (${extraCount} người)',
+                  'Khuân vác combo: từ ${_formatPrice(pkg.extraLaborComboPrice)}/người (nhà xe đặt) · Thuê riêng: ~${_formatPrice(pkg.extraLaborRetailPrice)}/người',
                   style: TextStyle(fontSize: 11.sp, color: c.success, fontWeight: FontWeight.w600, height: 1.35),
                 ),
               ),
@@ -372,47 +374,41 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
     );
   }
 
-  Widget _extraLaborButton(
+  Widget _laborCountChip(
     UniMoveColors c, {
-    required String title,
-    required String subtitle,
+    required int count,
+    required int unitPrice,
     required bool selected,
     required VoidCallback onTap,
   }) {
     return Material(
-      color: selected ? c.primary.withValues(alpha: 0.12) : c.chipBg,
-      borderRadius: BorderRadius.circular(10.r),
+      color: selected ? c.primary.withValues(alpha: 0.12) : c.surfaceTint,
+      borderRadius: BorderRadius.circular(12.r),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10.r),
+        borderRadius: BorderRadius.circular(12.r),
         child: Container(
-          padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 4.w),
+          padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10.r),
+            borderRadius: BorderRadius.circular(12.r),
             border: Border.all(color: selected ? c.primary : c.border, width: selected ? 1.5 : 1),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                title,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                '$count người',
                 style: TextStyle(
-                  fontSize: 10.sp,
+                  fontSize: 13.sp,
                   fontWeight: FontWeight.w700,
                   color: selected ? c.primary : c.onSurface,
                 ),
               ),
               SizedBox(height: 2.h),
               Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                _formatPrice(unitPrice * count),
                 style: TextStyle(
-                  fontSize: 10.sp,
+                  fontSize: 11.sp,
                   fontWeight: FontWeight.w600,
                   color: selected ? c.primary : c.onSurfaceMuted,
                 ),
@@ -468,6 +464,79 @@ class _ServicePackagesPageState extends State<ServicePackagesPage> {
     }
     return '${buf}đ';
   }
+
+  Widget _customTripLink(BuildContext context, UniMoveColors c) {
+    return Material(
+      color: c.surface,
+      borderRadius: BorderRadius.circular(14.r),
+      child: InkWell(
+        onTap: () {
+          final cubit = context.read<BookingFlowCubit>();
+          final dest = cubit.state.destination;
+          cubit.switchToCustomTrip();
+          context.push(dest.trim().isEmpty ? '/booking/location' : '/booking/partners');
+        },
+        borderRadius: BorderRadius.circular(14.r),
+        child: Container(
+          padding: EdgeInsets.all(14.w),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14.r),
+            border: Border.all(color: c.border),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.tune_rounded, color: c.primary, size: 22.sp),
+              SizedBox(width: 10.w),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Chuyến xa / nhiều điểm / đặc biệt?',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.sp, color: c.onSurface),
+                    ),
+                    SizedBox(height: 2.h),
+                    Text(
+                      'Dùng Đặt chuyến linh hoạt — so sánh báo giá nhà xe',
+                      style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: c.onSurfaceMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _needLocationHint(UniMoveColors c) {
+    return Material(
+      color: c.chipBg,
+      borderRadius: BorderRadius.circular(12.r),
+      child: InkWell(
+        onTap: () => context.push('/booking/location'),
+        borderRadius: BorderRadius.circular(12.r),
+        child: Padding(
+          padding: EdgeInsets.all(14.w),
+          child: Row(
+            children: [
+              Icon(Icons.location_on_outlined, color: c.primary, size: 22.sp),
+              SizedBox(width: 10.w),
+              Expanded(
+                child: Text(
+                  'Chọn điểm đón & đến trước — giống đặt chuyến bình thường',
+                  style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: c.onSurface),
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: c.onSurfaceMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Bảng so sánh nhanh 3 combo (tránh nhồi giá vào một Row trong thẻ).
@@ -521,7 +590,7 @@ class _ComboPricingTable extends StatelessWidget {
                   Expanded(
                     flex: 3,
                     child: Text(
-                      _shortPrice(p.price),
+                      _shortPrice(p.referencePrice),
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 11.sp, color: c.primary, fontWeight: FontWeight.w700),
                     ),
@@ -537,7 +606,7 @@ class _ComboPricingTable extends StatelessWidget {
                   Expanded(
                     flex: 2,
                     child: Text(
-                      '${p.laborIncluded}',
+                      '${p.laborSuggested}',
                       style: TextStyle(fontSize: 11.sp, color: c.onSurface),
                       textAlign: TextAlign.center,
                     ),
@@ -556,7 +625,7 @@ class _ComboPricingTable extends StatelessWidget {
           }),
           SizedBox(height: 2.h),
           Text(
-            'Km = số km di chuyển đã bao gồm · Người = số khuân vác kèm · Thuê riêng ~120k/người',
+            'Km & xe = niêm yết cố định · Người = gợi ý · Khuân vác = nhà xe đặt trong combo',
             style: TextStyle(fontSize: 10.sp, color: c.onSurfaceMuted, height: 1.3),
           ),
         ],

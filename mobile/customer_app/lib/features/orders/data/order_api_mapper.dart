@@ -33,6 +33,9 @@ abstract final class OrderApiMapper {
       providerRating: null,
       providerPlate: null,
       conversationId: null,
+      scheduledPickupAt: json['scheduled_pickup_time'] != null
+          ? DateTime.tryParse(json['scheduled_pickup_time'] as String)
+          : null,
     );
   }
 
@@ -54,29 +57,41 @@ abstract final class OrderApiMapper {
   }
 
   static TrackingSnapshot trackingFromOrder(CustomerOrder order) {
-    final steps = _stepsForStatus(order.status);
+    final awaiting = order.isAwaitingScheduledPickup;
+    final steps = _stepsForStatus(order.status, scheduled: order.scheduledPickupAt != null);
     final activeIndex = steps.indexWhere((s) => s.active);
-    final eta = order.etaMinutes ?? (order.status.isActive ? 25 : 0);
+    final eta = awaiting ? 0 : (order.etaMinutes ?? (order.showLiveTracking ? 25 : 0));
 
     return TrackingSnapshot(
       order: order,
       steps: steps,
       etaMinutes: eta,
-      distanceKm: order.estimatedDistanceKm ?? 5.2,
+      distanceKm: awaiting ? 0 : (order.estimatedDistanceKm ?? 5.2),
       driverLat: 10.762622,
       driverLng: 106.660172,
-      statusLabel: steps[activeIndex >= 0 ? activeIndex : 0].label,
+      statusLabel: awaiting
+          ? 'Chờ đến giờ lấy đồ'
+          : steps[activeIndex >= 0 ? activeIndex : 0].label,
+      isAwaitingScheduledPickup: awaiting,
     );
   }
 
-  static List<TrackingStep> _stepsForStatus(OrderStatus status) {
-    const labels = [
-      ('pending', 'Chờ báo giá'),
-      ('accepted', 'Đã chốt giá'),
-      ('picking_up', 'Đang lấy đồ'),
-      ('in_progress', 'Đang vận chuyển'),
-      ('completed', 'Hoàn thành'),
-    ];
+  static List<TrackingStep> _stepsForStatus(OrderStatus status, {bool scheduled = false}) {
+    final labels = scheduled
+        ? [
+            ('pending', 'Đã đặt lịch'),
+            ('accepted', 'Nhà xe xác nhận'),
+            ('picking_up', 'Đến giờ lấy đồ'),
+            ('in_progress', 'Đang vận chuyển'),
+            ('completed', 'Hoàn thành'),
+          ]
+        : [
+            ('pending', 'Đã đặt đơn'),
+            ('accepted', 'Nhà xe nhận'),
+            ('picking_up', 'Đang lấy hàng'),
+            ('in_progress', 'Đang vận chuyển'),
+            ('completed', 'Hoàn thành'),
+          ];
 
     final order = ['pending', 'accepted', 'picking_up', 'in_progress', 'completed'];
     final current = status.dbValue;

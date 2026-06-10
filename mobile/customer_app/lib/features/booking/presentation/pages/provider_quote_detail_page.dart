@@ -49,7 +49,9 @@ class _ProviderQuoteDetailPageState extends State<ProviderQuoteDetailPage> {
     }
     if (!mounted) return;
 
-    if (snap?.status == QuoteProgressStatus.providerConfirmed) {
+    if (snap?.status == QuoteProgressStatus.providerConfirmed &&
+        !snap!.hasRequestedPickup) {
+      setState(() => _loading = false);
       context.go('/booking/quotes/${widget.referenceId}/schedule');
       return;
     }
@@ -58,6 +60,7 @@ class _ProviderQuoteDetailPageState extends State<ProviderQuoteDetailPage> {
         snap?.status == QuoteProgressStatus.depositPaid ||
         snap?.status == QuoteProgressStatus.inProgress ||
         snap?.status == QuoteProgressStatus.completed) {
+      setState(() => _loading = false);
       context.go('/booking/quotes/${widget.referenceId}/progress');
       return;
     }
@@ -69,16 +72,89 @@ class _ProviderQuoteDetailPageState extends State<ProviderQuoteDetailPage> {
   }
 
   Future<void> _confirm() async {
+    final q = _quote;
+    if (q != null && !q.canConfirmSchedule) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nhà xe này không nhận khung giờ bạn chọn. Hãy chọn nhà xe khác.'),
+        ),
+      );
+      return;
+    }
+
+    DateTime? pickupAt;
+    if (q?.scheduleFit == QuoteScheduleFit.alternateProposed) {
+      pickupAt = await _pickAlternateTime(q!);
+      if (pickupAt == null || !mounted) return;
+    }
+
     setState(() => _confirming = true);
     try {
-      await _repo.confirmProvider(referenceId: widget.referenceId, quoteId: widget.quoteId);
+      final updated = await _repo.confirmProvider(
+        referenceId: widget.referenceId,
+        quoteId: widget.quoteId,
+        pickupAt: pickupAt,
+      );
       if (!mounted) return;
-      context.go('/booking/quotes/${widget.referenceId}/schedule');
+      if (!updated.hasRequestedPickup) {
+        context.go('/booking/quotes/${widget.referenceId}/schedule');
+        return;
+      }
+      context.pop(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không chốt được: $e')));
       setState(() => _confirming = false);
     }
+  }
+
+  Future<DateTime?> _pickAlternateTime(ProviderQuoteResponse q) async {
+    final proposed = q.proposedPickupAt;
+    if (proposed == null) return null;
+
+    final options = <DateTime>{
+      proposed,
+      proposed.subtract(const Duration(minutes: 30)),
+      proposed.add(const Duration(minutes: 30)),
+      proposed.add(const Duration(hours: 1)),
+    }.toList()
+      ..sort();
+
+    final c = UniMoveColors.of(context);
+    return showModalBottomSheet<DateTime>(
+      context: context,
+      backgroundColor: c.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20.r))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 28.h),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Chọn giờ chuyển', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w800)),
+            SizedBox(height: 6.h),
+            Text(
+              'Nhà xe đề xuất ${q.proposedPickupLabel ?? formatQuotePickupLabel(proposed)}. '
+              'Bạn có thể chọn giờ gần nhất để chốt giá.',
+              style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted, height: 1.35),
+            ),
+            SizedBox(height: 14.h),
+            ...options.map(
+              (dt) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  dt == proposed ? Icons.recommend_outlined : Icons.schedule_outlined,
+                  color: c.primary,
+                ),
+                title: Text(formatQuotePickupLabel(dt), style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: dt == proposed ? const Text('Giờ nhà xe đề xuất') : null,
+                onTap: () => Navigator.pop(ctx, dt),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -128,6 +204,8 @@ class _ProviderQuoteDetailPageState extends State<ProviderQuoteDetailPage> {
             style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
           ),
           SizedBox(height: 20.h),
+          _scheduleFitBanner(c, q),
+          SizedBox(height: 16.h),
           Text('Bảng giá minh bạch', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w800)),
           SizedBox(height: 10.h),
           _priceRow(c, 'Giá cơ bản', q.basePrice),
@@ -161,10 +239,63 @@ class _ProviderQuoteDetailPageState extends State<ProviderQuoteDetailPage> {
         child: Padding(
           padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 16.h),
           child: SmoothCtaButton(
-            label: _confirming ? 'Đang xác nhận...' : 'Xác nhận nhà xe này',
-            onPressed: _confirming ? null : _confirm,
+            label: _confirming
+                ? 'Đang xác nhận...'
+                : switch (q.scheduleFit) {
+                    QuoteScheduleFit.exactMatch => 'Chốt với giờ bạn chọn',
+                    QuoteScheduleFit.alternateProposed => 'Chọn giờ & chốt giá',
+                    QuoteScheduleFit.unavailable => 'Không thể chốt nhà xe này',
+                  },
+            isLoading: _confirming,
+            outlined: !q.canConfirmSchedule,
+            showArrow: q.canConfirmSchedule,
+            onPressed: _confirming
+                ? null
+                : q.canConfirmSchedule
+                    ? _confirm
+                    : () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Nhà xe không nhận khung giờ bạn chọn. Hãy quay lại và chọn nhà xe khác.',
+                            ),
+                          ),
+                        );
+                      },
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _scheduleFitBanner(UniMoveColors c, ProviderQuoteResponse q) {
+    final (bg, fg, icon) = switch (q.scheduleFit) {
+      QuoteScheduleFit.exactMatch => (c.primary.withValues(alpha: 0.12), c.primary, Icons.check_circle_outline),
+      QuoteScheduleFit.alternateProposed =>
+        (Colors.orange.withValues(alpha: 0.12), Colors.orange.shade800, Icons.schedule_outlined),
+      QuoteScheduleFit.unavailable =>
+        (Colors.red.withValues(alpha: 0.1), Colors.red.shade700, Icons.block_outlined),
+    };
+    final text = switch (q.scheduleFit) {
+      QuoteScheduleFit.exactMatch => 'Nhà xe nhận đúng giờ bạn đã chọn.',
+      QuoteScheduleFit.alternateProposed =>
+        'Đề xuất giờ khác${q.proposedPickupLabel != null ? ': ${q.proposedPickupLabel}' : ''}. '
+            'Bạn sẽ xác nhận sau khi chốt.',
+      QuoteScheduleFit.unavailable => 'Nhà xe không nhận khung giờ bạn chọn.',
+    };
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(12.w),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12.r)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20.sp, color: fg),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Text(text, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: fg)),
+          ),
+        ],
       ),
     );
   }

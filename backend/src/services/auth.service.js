@@ -248,6 +248,65 @@ async function getMe(userId) {
   return publicProfile(row);
 }
 
+/** PATCH /api/auth/me — cập nhật hồ sơ (customer + provider) */
+async function updateProfile(userId, body) {
+  if (!userId) {
+    throw httpError(400, 'User ID is required', 'validation_error');
+  }
+
+  const { data: profiles, error: lookupError } = await supabaseAdmin
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .limit(1);
+
+  if (lookupError) throw httpError(500, lookupError.message, 'db_error');
+  if (!profiles?.length) throw httpError(404, 'User not found', 'user_not_found');
+
+  const role = profiles[0].role;
+  const { full_name, phone, business_name, vehicle_type, student_id, university, address } = body || {};
+
+  const profileUpdates = {};
+  if (full_name !== undefined) profileUpdates.full_name = String(full_name).trim();
+  if (phone !== undefined) profileUpdates.phone = normalizePhone(phone);
+
+  if (Object.keys(profileUpdates).length > 0) {
+    const { error } = await supabaseAdmin.from('profiles').update(profileUpdates).eq('id', userId);
+    if (error) throw httpError(500, error.message, 'db_error');
+  }
+
+  if (role === 'provider') {
+    const ppUpdates = {};
+    if (business_name !== undefined) ppUpdates.business_name = String(business_name).trim();
+    if (vehicle_type !== undefined) ppUpdates.vehicle_type = String(vehicle_type).trim();
+    if (Object.keys(ppUpdates).length > 0) {
+      const { error } = await supabaseAdmin.from('provider_profiles').update(ppUpdates).eq('id', userId);
+      if (error) throw httpError(500, error.message, 'db_error');
+    }
+  } else if (role === 'customer') {
+    const customerUpdates = {};
+    if (student_id !== undefined) customerUpdates.student_id = student_id;
+    if (university !== undefined) customerUpdates.university = university;
+    if (address !== undefined) customerUpdates.address = address;
+    if (Object.keys(customerUpdates).length > 0) {
+      const { error } = await supabaseAdmin
+        .from('customer_profiles')
+        .upsert({ id: userId, ...customerUpdates }, { onConflict: 'id' });
+      if (error) throw httpError(500, error.message, 'db_error');
+    }
+  }
+
+  if (
+    Object.keys(profileUpdates).length === 0 &&
+    !(role === 'provider' && (business_name !== undefined || vehicle_type !== undefined)) &&
+    !(role === 'customer' && (student_id !== undefined || university !== undefined || address !== undefined))
+  ) {
+    throw httpError(400, 'Không có trường hợp lệ để cập nhật', 'validation_error');
+  }
+
+  return getMe(userId);
+}
+
 /** BE-006 — POST /api/auth/change-password (Node JWT — user_credentials) */
 async function changePassword(userId, body) {
   const old_password = body?.old_password ?? body?.current_password ?? body?.password;
@@ -507,6 +566,7 @@ module.exports = {
   register,
   login,
   getMe,
+  updateProfile,
   changePassword,
   forgotPassword,
   resetPassword,

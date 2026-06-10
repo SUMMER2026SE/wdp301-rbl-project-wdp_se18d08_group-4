@@ -23,6 +23,7 @@ class QuoteProgressRepository {
     required BookingFlowState state,
     List<String> imageUrls = const [],
   }) async {
+    final requestedAt = state.scheduledPickupAt;
     final snapshot = QuoteRequestSnapshot(
       id: referenceId,
       status: QuoteProgressStatus.waitingQuotes,
@@ -31,6 +32,12 @@ class QuoteProgressRepository {
       createdAt: DateTime.now(),
       imageUrls: imageUrls,
       dormNote: state.dormNote,
+      wantsTransportLabor: state.wantsTransportLabor && !state.isComboBooking,
+      transportLaborHelpers: state.transportLaborHelpers,
+      transportLaborHours: state.transportLaborHours,
+      requestedPickupAt: requestedAt,
+      requestedPickupLabel:
+          requestedAt != null ? formatQuotePickupLabel(requestedAt) : null,
     );
     _store[referenceId] = snapshot;
 
@@ -89,13 +96,124 @@ class QuoteProgressRepository {
   Future<QuoteRequestSnapshot> confirmProvider({
     required String referenceId,
     required String quoteId,
+    DateTime? pickupAt,
+  }) async {
+    final snap = _store[referenceId];
+    if (snap == null) throw Exception('Không tìm thấy yêu cầu báo giá');
+
+    ProviderQuoteResponse? quote;
+    for (final q in snap.quotes) {
+      if (q.id == quoteId) {
+        quote = q;
+        break;
+      }
+    }
+    if (quote == null) throw Exception('Không tìm thấy báo giá');
+
+    if (!quote.canConfirmSchedule) {
+      throw Exception(
+        'Nhà xe này không nhận khung giờ bạn chọn. Hãy chọn nhà xe khác hoặc đổi giờ.',
+      );
+    }
+
+    // Đã chọn giờ trước → chốt và gửi lịch cho nhà xe xác nhận.
+    if (snap.hasRequestedPickup) {
+      return confirmQuoteWithPickupTime(
+        referenceId: referenceId,
+        quoteId: quoteId,
+        pickupAt: pickupAt,
+      );
+    }
+
+    // Luồng cũ: chưa chọn giờ trước → chọn lịch sau khi chốt nhà xe.
+    final updated = snap.copyWith(
+      status: QuoteProgressStatus.providerConfirmed,
+      confirmedQuoteId: quoteId,
+    );
+    _store[referenceId] = updated;
+    return updated;
+  }
+
+  /// Chốt báo giá kèm giờ chuyển — chờ nhà xe xác nhận trên app.
+  Future<QuoteRequestSnapshot> confirmQuoteWithPickupTime({
+    required String referenceId,
+    required String quoteId,
+    DateTime? pickupAt,
+  }) async {
+    final snap = _store[referenceId];
+    if (snap == null) throw Exception('Không tìm thấy yêu cầu báo giá');
+
+    ProviderQuoteResponse? quote;
+    for (final q in snap.quotes) {
+      if (q.id == quoteId) {
+        quote = q;
+        break;
+      }
+    }
+    if (quote == null) throw Exception('Không tìm thấy báo giá');
+    if (!quote.canConfirmSchedule) {
+      throw Exception('Nhà xe này không nhận khung giờ bạn chọn.');
+    }
+
+    final DateTime scheduledAt;
+    switch (quote.scheduleFit) {
+      case QuoteScheduleFit.exactMatch:
+        final at = pickupAt ?? snap.requestedPickupAt;
+        if (at == null) throw Exception('Chưa chọn giờ chuyển');
+        scheduledAt = at;
+      case QuoteScheduleFit.alternateProposed:
+        final at = pickupAt ?? quote.proposedPickupAt;
+        if (at == null) throw Exception('Nhà xe chưa đề xuất giờ thay thế');
+        scheduledAt = at;
+      case QuoteScheduleFit.unavailable:
+        throw Exception('Nhà xe không nhận khung giờ này');
+    }
+
+    final label = formatQuotePickupLabel(scheduledAt);
+    final updated = snap.copyWith(
+      status: QuoteProgressStatus.scheduled,
+      confirmedQuoteId: quoteId,
+      scheduledPickupAt: scheduledAt,
+      scheduledSlotLabel: label,
+    );
+    _store[referenceId] = updated;
+    Future<void>.delayed(const Duration(seconds: 4), () => _tryAdvanceProviderAccept(referenceId));
+    return updated;
+  }
+
+  Future<QuoteRequestSnapshot> acceptAlternateSchedule({
+    required String referenceId,
+  }) async {
+    final snap = _store[referenceId];
+    if (snap == null) throw Exception('Không tìm thấy yêu cầu báo giá');
+
+    final quote = snap.confirmedQuote;
+    final proposed = quote?.proposedPickupAt;
+    if (quote?.scheduleFit != QuoteScheduleFit.alternateProposed || proposed == null) {
+      throw Exception('Không có giờ đề xuất để xác nhận');
+    }
+
+    final label = quote!.proposedPickupLabel ?? formatQuotePickupLabel(proposed);
+    final updated = snap.copyWith(
+      status: QuoteProgressStatus.scheduled,
+      scheduledPickupAt: proposed,
+      scheduledSlotLabel: label,
+    );
+    _store[referenceId] = updated;
+    Future<void>.delayed(const Duration(seconds: 4), () => _tryAdvanceProviderAccept(referenceId));
+    return updated;
+  }
+
+  Future<QuoteRequestSnapshot> declineAlternateSchedule({
+    required String referenceId,
   }) async {
     final snap = _store[referenceId];
     if (snap == null) throw Exception('Không tìm thấy yêu cầu báo giá');
 
     final updated = snap.copyWith(
-      status: QuoteProgressStatus.providerConfirmed,
-      confirmedQuoteId: quoteId,
+      status: QuoteProgressStatus.quotesReady,
+      clearConfirmedQuote: true,
+      clearScheduled: true,
     );
     _store[referenceId] = updated;
     return updated;
@@ -197,9 +315,15 @@ class QuoteProgressRepository {
     if (snap == null || snap.quotes.isNotEmpty) return;
 
     final partners = await _partnersRepo.fetchPartners();
+    final requestedAt = snap.requestedPickupAt;
     final quotes = partners.asMap().entries.map((e) {
       final p = e.value;
-      final surcharges = _surchargesForPartner(e.key, p);
+      final surcharges = _surchargesForPartner(e.key, p, snap);
+      final scheduleFit =
+          requestedAt == null ? QuoteScheduleFit.exactMatch : _scheduleFitForIndex(e.key);
+      final proposedAt = scheduleFit == QuoteScheduleFit.alternateProposed && requestedAt != null
+          ? requestedAt.add(const Duration(hours: 1, minutes: 30))
+          : null;
       return ProviderQuoteResponse(
         id: 'q-${p.id}',
         providerId: p.id,
@@ -213,7 +337,13 @@ class QuoteProgressRepository {
         basePrice: p.price,
         surcharges: surcharges,
         recentReviews: p.recentReviews,
-        note: 'Giá gồm xe + khuân vác cơ bản. Phụ phí liệt kê bên dưới.',
+        note: snap.wantsTransportLabor
+            ? 'Giá gồm xe + khuân vác theo yêu cầu (${snap.transportLaborLabel}). Phụ phí liệt kê bên dưới.'
+            : 'Giá gồm xe vận chuyển. Phụ phí liệt kê bên dưới.',
+        scheduleFit: scheduleFit,
+        proposedPickupAt: proposedAt,
+        proposedPickupLabel:
+            proposedAt != null ? formatQuotePickupLabel(proposedAt) : null,
       );
     }).toList();
 
@@ -224,8 +354,18 @@ class QuoteProgressRepository {
     _store[referenceId] = snap.copyWith(status: status, quotes: quotes);
   }
 
-  List<QuoteSurchargeLine> _surchargesForPartner(int index, PartnerOffer p) {
-    return switch (index) {
+  QuoteScheduleFit _scheduleFitForIndex(int index) => switch (index % 3) {
+        0 => QuoteScheduleFit.exactMatch,
+        1 => QuoteScheduleFit.alternateProposed,
+        _ => QuoteScheduleFit.unavailable,
+      };
+
+  List<QuoteSurchargeLine> _surchargesForPartner(
+    int index,
+    PartnerOffer p,
+    QuoteRequestSnapshot snap,
+  ) {
+    final base = switch (index) {
       0 => const [
           QuoteSurchargeLine(label: 'Tầng không thang máy (x2)', amount: 80000),
           QuoteSurchargeLine(label: 'Hẻm hẹp — xe nhỏ', amount: 50000),
@@ -235,9 +375,20 @@ class QuoteProgressRepository {
         ],
       _ => const [
           QuoteSurchargeLine(label: 'Km vượt gói (3 km)', amount: 21000),
-          QuoteSurchargeLine(label: 'Thêm 1 người khuân (1 giờ)', amount: 90000),
         ],
     };
+
+    if (!snap.wantsTransportLabor) return base;
+
+    final unit = p.comboLaborUnitPrice ?? 60000;
+    final laborFee = snap.transportLaborHelpers * snap.transportLaborHours * unit;
+    return [
+      ...base,
+      QuoteSurchargeLine(
+        label: 'Khuân vác · ${snap.transportLaborHelpers} người × ${snap.transportLaborHours} giờ',
+        amount: laborFee,
+      ),
+    ];
   }
 
   static void seedDemoIfEmpty() {

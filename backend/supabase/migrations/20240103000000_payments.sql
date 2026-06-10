@@ -2,40 +2,49 @@
 -- Description: Payment processing, transactions, and financial records
 
 -- Create ENUM types for payments
-CREATE TYPE payment_status AS ENUM (
-    'pending',           -- Chờ thanh toán
-    'processing',        -- Đang xử lý
-    'completed',         -- Thành công
-    'failed',            -- Thất bại
-    'refunded',          -- Đã hoàn tiền
-    'partially_refunded',-- Hoàn một phần
-    'cancelled'          -- Đã hủy
-);
+DO $$ BEGIN
+    CREATE TYPE payment_status AS ENUM (
+        'pending',           -- Chờ thanh toán
+        'processing',        -- Đang xử lý
+        'completed',         -- Thành công
+        'failed',            -- Thất bại
+        'refunded',          -- Đã hoàn tiền
+        'partially_refunded',-- Hoàn một phần
+        'cancelled'          -- Đã hủy
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE payment_method AS ENUM (
-    'payos',             -- PayOS payment gateway
-    'cash',              -- Tiền mặt
-    'bank_transfer',     -- Chuyển khoản
-    'wallet',            -- Ví điện tử
-    'credit_card',       -- Thẻ tín dụng
-    'debit_card'         -- Thẻ ghi nợ
-);
+DO $$ BEGIN
+    CREATE TYPE payment_method AS ENUM (
+        'payos',             -- PayOS payment gateway
+        'cash',              -- Tiền mặt
+        'bank_transfer',     -- Chuyển khoản
+        'wallet',            -- Ví điện tử
+        'credit_card',       -- Thẻ tín dụng
+        'debit_card'         -- Thẻ ghi nợ
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE transaction_type AS ENUM (
-    'order_payment',     -- Thanh toán đơn hàng
-    'refund',            -- Hoàn tiền
-    'commission',        -- Hoa hồng
-    'withdrawal',        -- Rút tiền
-    'deposit',           -- Nạp tiền
-    'penalty',           -- Phạt
-    'bonus'              -- Thưởng
-);
+DO $$ BEGIN
+    CREATE TYPE transaction_type AS ENUM (
+        'order_payment',     -- Thanh toán đơn hàng
+        'refund',            -- Hoàn tiền
+        'commission',        -- Hoa hồng
+        'withdrawal',        -- Rút tiền
+        'deposit',           -- Nạp tiền
+        'penalty',           -- Phạt
+        'bonus'              -- Thưởng
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- =====================================================
 -- PAYMENTS
 -- =====================================================
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     payment_code TEXT UNIQUE NOT NULL, -- Format: PAY-YYYYMMDD-XXXX
     order_id UUID NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
@@ -46,6 +55,10 @@ CREATE TABLE payments (
     currency TEXT NOT NULL DEFAULT 'VND',
     payment_method payment_method NOT NULL,
     status payment_status NOT NULL DEFAULT 'pending',
+    
+    -- Escrow & Purpose management
+    escrow_status TEXT DEFAULT 'none', -- none, pending, held, released
+    payment_purpose TEXT DEFAULT 'full', -- full, deposit, final, refund, penalty
     
     -- PayOS integration
     payos_order_id TEXT,
@@ -72,7 +85,7 @@ CREATE TABLE payments (
 );
 
 -- Payment transactions (detailed transaction log)
-CREATE TABLE payment_transactions (
+CREATE TABLE IF NOT EXISTS payment_transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
     transaction_type transaction_type NOT NULL,
@@ -91,7 +104,7 @@ CREATE TABLE payment_transactions (
 );
 
 -- Refunds
-CREATE TABLE refunds (
+CREATE TABLE IF NOT EXISTS refunds (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
     order_id UUID NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
@@ -115,7 +128,7 @@ CREATE TABLE refunds (
 );
 
 -- Provider earnings (track provider income)
-CREATE TABLE provider_earnings (
+CREATE TABLE IF NOT EXISTS provider_earnings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     provider_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     order_id UUID NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
@@ -138,7 +151,7 @@ CREATE TABLE provider_earnings (
 );
 
 -- Provider withdrawals (rút tiền)
-CREATE TABLE provider_withdrawals (
+CREATE TABLE IF NOT EXISTS provider_withdrawals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     provider_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     
@@ -167,7 +180,7 @@ CREATE TABLE provider_withdrawals (
 );
 
 -- Wallet system (for future use)
-CREATE TABLE wallets (
+CREATE TABLE IF NOT EXISTS wallets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE UNIQUE,
     balance DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -180,7 +193,7 @@ CREATE TABLE wallets (
 );
 
 -- Wallet transactions
-CREATE TABLE wallet_transactions (
+CREATE TABLE IF NOT EXISTS wallet_transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     wallet_id UUID NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
     transaction_type transaction_type NOT NULL,
@@ -196,8 +209,36 @@ CREATE TABLE wallet_transactions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Promotions and discounts
-CREATE TABLE promotions (
+-- =====================================================
+-- PAYMENT METHODS — Customer's saved payment methods
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS payment_methods (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    customer_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    
+    -- Payment method details
+    kind TEXT NOT NULL, -- 'payos', 'momo', 'bank_transfer', 'credit_card', 'debit_card'
+    label TEXT NOT NULL, -- e.g., "PayOS - Vietcombank", "MoMo 0987654321"
+    token_ref TEXT NOT NULL, -- Reference ID from payment provider (NOT full card number)
+    
+    -- Status
+    is_default BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    
+    -- Metadata
+    metadata JSONB, -- Store additional info like last 4 digits, expiry month/year (masked)
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    UNIQUE(customer_id, kind, token_ref)
+);
+
+-- =====================================================
+-- PROMOTIONS
+-- =====================================================
+CREATE TABLE IF NOT EXISTS promotions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
@@ -228,7 +269,7 @@ CREATE TABLE promotions (
 );
 
 -- Promotion usage tracking
-CREATE TABLE promotion_usage (
+CREATE TABLE IF NOT EXISTS promotion_usage (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     promotion_id UUID NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -240,43 +281,58 @@ CREATE TABLE promotion_usage (
 );
 
 -- Create indexes
-CREATE INDEX idx_payments_order ON payments(order_id);
-CREATE INDEX idx_payments_customer ON payments(customer_id);
-CREATE INDEX idx_payments_status ON payments(status);
-CREATE INDEX idx_payments_payment_code ON payments(payment_code);
-CREATE INDEX idx_payments_payos_order ON payments(payos_order_id);
-CREATE INDEX idx_payment_transactions_payment ON payment_transactions(payment_id);
-CREATE INDEX idx_refunds_payment ON refunds(payment_id);
-CREATE INDEX idx_refunds_order ON refunds(order_id);
-CREATE INDEX idx_provider_earnings_provider ON provider_earnings(provider_id);
-CREATE INDEX idx_provider_earnings_order ON provider_earnings(order_id);
-CREATE INDEX idx_provider_earnings_status ON provider_earnings(status);
-CREATE INDEX idx_provider_withdrawals_provider ON provider_withdrawals(provider_id);
-CREATE INDEX idx_provider_withdrawals_status ON provider_withdrawals(status);
-CREATE INDEX idx_wallets_user ON wallets(user_id);
-CREATE INDEX idx_wallet_transactions_wallet ON wallet_transactions(wallet_id);
-CREATE INDEX idx_promotions_code ON promotions(code);
-CREATE INDEX idx_promotions_active ON promotions(is_active);
-CREATE INDEX idx_promotion_usage_promotion ON promotion_usage(promotion_id);
-CREATE INDEX idx_promotion_usage_user ON promotion_usage(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_escrow ON payments(escrow_status);
+CREATE INDEX IF NOT EXISTS idx_payments_payment_code ON payments(payment_code);
+CREATE INDEX IF NOT EXISTS idx_payments_payos_order ON payments(payos_order_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_payment ON payment_transactions(payment_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_payment ON refunds(payment_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id);
+CREATE INDEX IF NOT EXISTS idx_provider_earnings_provider ON provider_earnings(provider_id);
+CREATE INDEX IF NOT EXISTS idx_provider_earnings_order ON provider_earnings(order_id);
+CREATE INDEX IF NOT EXISTS idx_provider_earnings_status ON provider_earnings(status);
+CREATE INDEX IF NOT EXISTS idx_provider_withdrawals_provider ON provider_withdrawals(provider_id);
+CREATE INDEX IF NOT EXISTS idx_provider_withdrawals_status ON provider_withdrawals(status);
+CREATE INDEX IF NOT EXISTS idx_wallets_user ON wallets(user_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_wallet ON wallet_transactions(wallet_id);
+CREATE INDEX IF NOT EXISTS idx_payment_methods_customer ON payment_methods(customer_id);
+CREATE INDEX IF NOT EXISTS idx_payment_methods_default ON payment_methods(customer_id, is_default);
+CREATE INDEX IF NOT EXISTS idx_payment_methods_active ON payment_methods(is_active);
+CREATE INDEX IF NOT EXISTS idx_promotions_code ON promotions(code);
+CREATE INDEX IF NOT EXISTS idx_promotions_active ON promotions(is_active);
+CREATE INDEX IF NOT EXISTS idx_promotion_usage_promotion ON promotion_usage(promotion_id);
+CREATE INDEX IF NOT EXISTS idx_promotion_usage_user ON promotion_usage(user_id);
 
 -- Apply updated_at triggers
+DROP TRIGGER IF EXISTS update_payments_updated_at ON payments;
 CREATE TRIGGER update_payments_updated_at BEFORE UPDATE ON payments
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_refunds_updated_at ON refunds;
 CREATE TRIGGER update_refunds_updated_at BEFORE UPDATE ON refunds
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_provider_withdrawals_updated_at ON provider_withdrawals;
 CREATE TRIGGER update_provider_withdrawals_updated_at BEFORE UPDATE ON provider_withdrawals
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_wallets_updated_at ON wallets;
 CREATE TRIGGER update_wallets_updated_at BEFORE UPDATE ON wallets
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_promotions_updated_at ON promotions;
 CREATE TRIGGER update_promotions_updated_at BEFORE UPDATE ON promotions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Function to generate payment code
+DROP TRIGGER IF EXISTS update_payment_methods_updated_at ON payment_methods;
+CREATE TRIGGER update_payment_methods_updated_at BEFORE UPDATE ON payment_methods
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =====================================================
+-- FUNCTIONS & TRIGGERS FOR PAYMENTS
+-- =====================================================
 CREATE OR REPLACE FUNCTION generate_payment_code()
 RETURNS TEXT AS $$
 DECLARE
@@ -306,6 +362,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS set_payment_code_trigger ON payments;
 CREATE TRIGGER set_payment_code_trigger
     BEFORE INSERT ON payments
     FOR EACH ROW
@@ -361,18 +418,95 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS create_provider_earnings_trigger ON payments;
 CREATE TRIGGER create_provider_earnings_trigger
     AFTER UPDATE ON payments
     FOR EACH ROW
     EXECUTE FUNCTION create_provider_earnings();
 
--- Comments
+-- =====================================================
+-- WALLET AUTO-UPDATE TRIGGER
+-- =====================================================
+
+-- Function to update wallet balance on payment completion
+CREATE OR REPLACE FUNCTION update_wallet_on_payment_completed()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_wallet_id UUID;
+    v_balance_before DECIMAL(12,2);
+    v_balance_after DECIMAL(12,2);
+BEGIN
+    -- Only process when payment is completed
+    IF NEW.status = 'completed' AND OLD.status != 'completed' THEN
+        -- Get or create wallet for customer
+        SELECT id INTO v_wallet_id FROM wallets WHERE user_id = NEW.customer_id;
+        
+        IF v_wallet_id IS NULL THEN
+            INSERT INTO wallets (user_id, balance, currency)
+            VALUES (NEW.customer_id, 0, 'VND')
+            RETURNING id INTO v_wallet_id;
+        END IF;
+        
+        -- Get balance before update
+        SELECT balance INTO v_balance_before FROM wallets WHERE id = v_wallet_id;
+        
+        -- If payment method is wallet, deduct from wallet
+        IF NEW.payment_method = 'wallet'::payment_method THEN
+            UPDATE wallets
+            SET balance = GREATEST(balance - NEW.amount, 0),
+                updated_at = NOW()
+            WHERE id = v_wallet_id
+            RETURNING balance INTO v_balance_after;
+            
+            -- Log transaction
+            INSERT INTO wallet_transactions (
+                wallet_id,
+                transaction_type,
+                amount,
+                balance_before,
+                balance_after,
+                reference_type,
+                reference_id,
+                description
+            ) VALUES (
+                v_wallet_id,
+                'order_payment'::transaction_type,
+                NEW.amount,
+                v_balance_before,
+                v_balance_after,
+                'payment',
+                NEW.id,
+                'Payment completed: ' || NEW.payment_code
+            );
+        END IF;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS update_wallet_on_payment_completed_trigger ON payments;
+CREATE TRIGGER update_wallet_on_payment_completed_trigger
+    AFTER UPDATE ON payments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_wallet_on_payment_completed();
+
+-- =====================================================
+-- COMMENTS
+-- =====================================================
 COMMENT ON TABLE payments IS 'Payment records for orders';
 COMMENT ON TABLE payment_transactions IS 'Detailed transaction log';
 COMMENT ON TABLE refunds IS 'Refund requests and processing';
 COMMENT ON TABLE provider_earnings IS 'Provider income tracking';
 COMMENT ON TABLE provider_withdrawals IS 'Provider withdrawal requests';
-COMMENT ON TABLE wallets IS 'User wallet system';
+COMMENT ON TABLE wallets IS 'User wallet system for balance tracking';
 COMMENT ON TABLE wallet_transactions IS 'Wallet transaction history';
+COMMENT ON TABLE payment_methods IS 'Saved payment methods for customers (PayOS, MoMo, etc.)';
 COMMENT ON TABLE promotions IS 'Promotional codes and discounts';
 COMMENT ON TABLE promotion_usage IS 'Promotion usage tracking';
+
+-- Column comments
+COMMENT ON COLUMN payments.escrow_status IS 'Escrow status: none, pending, held, released';
+COMMENT ON COLUMN payments.payment_purpose IS 'Payment purpose: full, deposit, final, refund, penalty';
+COMMENT ON COLUMN payment_methods.kind IS 'Payment method type: payos, momo, bank_transfer, credit_card, debit_card';
+COMMENT ON COLUMN payment_methods.token_ref IS 'Reference token from payment provider (masked, no full card details)';

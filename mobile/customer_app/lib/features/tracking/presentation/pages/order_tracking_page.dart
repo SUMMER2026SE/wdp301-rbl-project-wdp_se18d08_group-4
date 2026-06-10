@@ -1,13 +1,12 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../core/constants/app_images.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/uni_move_colors.dart';
-import '../../../../core/widgets/pressable_scale.dart';
-import '../../../../core/widgets/uni_surface_card.dart';
+import '../../../../core/widgets/smooth_cta_button.dart';
 import '../../../chat/domain/active_chat_context.dart';
 import '../../../orders/data/customer_orders_repository.dart';
 import '../../../orders/domain/order_models.dart';
@@ -34,10 +33,20 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
 
   Future<void> _load() async {
     final t = await _repo.fetchTracking(widget.orderId);
-    if (mounted) setState(() {
-      _tracking = t;
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _tracking = t;
+        _loading = false;
+      });
+    }
+  }
+
+  void _goBack(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home?tab=activity');
+    }
   }
 
   @override
@@ -57,183 +66,100 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
     return Scaffold(
       backgroundColor: c.background,
       appBar: AppBar(
-        backgroundColor: c.surface,
+        backgroundColor: c.background,
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded, color: c.onSurface, size: 20.sp),
-          onPressed: () => context.pop(),
+          onPressed: () => _goBack(context),
         ),
-        title: Text('UniMove', style: TextStyle(color: c.primary, fontWeight: FontWeight.w800, fontSize: 20.sp)),
+        title: Text(
+          'Theo dõi chuyến',
+          style: TextStyle(color: c.onSurface, fontWeight: FontWeight.w700, fontSize: 17.sp),
+        ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.notifications_outlined, color: c.primary),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: Column(
         children: [
-          _StatusHero(snapshot: t, colors: c),
+          if (t.showLiveTracking) _LiveMapStrip(snapshot: t, colors: c),
           Expanded(
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
-                boxShadow: [
-                  BoxShadow(color: c.navBarShadow, blurRadius: 16, offset: const Offset(0, -4)),
-                ],
-              ),
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 24.h),
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        _statusTitle(t.statusLabel),
-                        style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.w800, color: c.onSurface),
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 16.h),
+              children: [
+                _StatusHeroCard(snapshot: t, colors: c),
+                SizedBox(height: 16.h),
+                _OrderInfoCard(order: order, colors: c),
+                SizedBox(height: 16.h),
+                _TrackingTimeline(steps: t.steps, colors: c),
+                SizedBox(height: 16.h),
+                _DriverCard(order: order, colors: c),
+                SizedBox(height: 20.h),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SmoothCtaButton(
+                        label: 'Gọi điện',
+                        showArrow: false,
+                        onPressed: () {},
                       ),
-                      const Spacer(),
-                      ShadBadge(
-                        child: Text(t.statusLabel, style: const TextStyle(fontSize: 11)),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8.h),
-                  Text(
-                    'Theo dõi qua trạng thái đơn — không cần bản đồ realtime',
-                    style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
-                  ),
-                  SizedBox(height: 16.h),
-                  _TrackingStepper(steps: t.steps, colors: c),
-                  SizedBox(height: 20.h),
-                  UniSurfaceCard(
-                    child: Row(
-                      children: [
-                        Stack(
-                          children: [
-                            CircleAvatar(
-                              radius: 28.r,
-                              backgroundImage: order.providerAvatarUrl != null
-                                  ? NetworkImage(order.providerAvatarUrl!)
-                                  : null,
-                              child: order.providerAvatarUrl == null
-                                  ? Icon(Icons.person, color: c.primary)
-                                  : null,
-                            ),
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                width: 14.w,
-                                height: 14.w,
-                                decoration: BoxDecoration(
-                                  color: c.accentGreen,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: c.surface, width: 2),
-                                ),
-                                child: Icon(Icons.check, size: 8.sp, color: Colors.white),
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(width: 12.w),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    order.providerName ?? 'Tài xế',
-                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16.sp),
-                                  ),
-                                  SizedBox(width: 6.w),
-                                  Icon(Icons.star, color: Colors.amber, size: 16.sp),
-                                  Text(
-                                    '${order.providerRating ?? 4.9}',
-                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.sp),
-                                  ),
-                                ],
-                              ),
-                              Text(
-                                '${order.vehicleLabel} • BKS ${order.providerPlate ?? ''}',
-                                style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     ),
-                  ),
-                  SizedBox(height: 16.h),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: PressableScale(
-                          onTap: () {},
-                          child: _actionBtn(Icons.call, 'Gọi điện', c.primary, AppColors.onPrimary),
-                        ),
+                    SizedBox(width: 12.w),
+                    Expanded(
+                      child: SmoothCtaButton(
+                        label: 'Nhắn tin',
+                        showArrow: false,
+                        outlined: true,
+                        onPressed: () {
+                          if (ActiveChatContext.orderAllowsChat(order) &&
+                              order.conversationId != null) {
+                            context.push('/chat/${order.conversationId}');
+                          }
+                        },
                       ),
-                      SizedBox(width: 12.w),
-                      Expanded(
-                        child: PressableScale(
-                          onTap: () {
-                            if (ActiveChatContext.orderAllowsChat(order) &&
-                                order.conversationId != null) {
-                              context.push('/chat/${order.conversationId}');
-                            }
-                          },
-                          child: _actionBtn(
-                            Icons.chat_bubble_outline,
-                            'Nhắn tin',
-                            c.primaryContainer,
-                            c.primary,
-                            outlined: true,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
       ),
-    );
-  }
-
-  static String _statusTitle(String label) {
-    if (label.contains('Chờ') || label.contains('Đã đặt')) return 'Theo dõi đơn hàng';
-    if (label.contains('nhận') || label.contains('chốt')) return 'Đã chốt giá';
-    return 'Tiến độ chuyển trọ';
-  }
-
-  Widget _actionBtn(IconData icon, String label, Color bg, Color fg, {bool outlined = false}) {
-    return Container(
-      height: 48.h,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: outlined ? Colors.transparent : bg,
-        borderRadius: BorderRadius.circular(14.r),
-        border: outlined ? Border.all(color: fg, width: 1.5) : null,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: fg, size: 20.sp),
-          SizedBox(width: 8.w),
-          Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 14.sp)),
-        ],
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20.w, 0, 20.w, 12.h),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () => context.go('/home'),
+                  icon: Icon(Icons.home_outlined, size: 18.sp, color: c.onSurfaceMuted),
+                  label: Text(
+                    'Về trang chủ',
+                    style: TextStyle(color: c.onSurfaceMuted, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 20.h, color: c.border),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () => context.go('/home?tab=activity'),
+                  icon: Icon(Icons.assignment_outlined, size: 18.sp, color: c.primary),
+                  label: Text(
+                    'Hoạt động',
+                    style: TextStyle(color: c.primary, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _StatusHero extends StatelessWidget {
-  const _StatusHero({required this.snapshot, required this.colors});
+class _StatusHeroCard extends StatelessWidget {
+  const _StatusHeroCard({required this.snapshot, required this.colors});
 
   final TrackingSnapshot snapshot;
   final UniMoveColors colors;
@@ -242,156 +168,436 @@ class _StatusHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = colors;
     final order = snapshot.order;
-    final isPending = snapshot.statusLabel.contains('Chờ') || order.status.dbValue == 'pending';
+    final awaiting = snapshot.isAwaitingScheduledPickup;
+
+    final (icon, subtitle) = switch (true) {
+      _ when snapshot.showLiveTracking && order.status == OrderStatus.inProgress =>
+        (Icons.local_shipping_rounded, 'Xe đang trên đường đến điểm giao'),
+      _ when snapshot.showLiveTracking =>
+        (Icons.near_me_rounded, 'Tài xế đang di chuyển đến điểm lấy đồ'),
+      _ when awaiting =>
+        (Icons.schedule_rounded, 'Vận chuyển bắt đầu đúng khung giờ bạn đã đặt'),
+      _ => (Icons.event_available_rounded, 'Đơn đang được xử lý theo lịch'),
+    };
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 24.h),
+      padding: EdgeInsets.all(18.w),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [c.primaryContainer, c.surface],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          colors: [c.primary, c.primaryLight],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(20.r),
+        boxShadow: [
+          BoxShadow(
+            color: c.primary.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
-      child: Column(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            isPending ? Icons.hourglass_top_rounded : Icons.local_shipping_outlined,
-            size: 48.sp,
-            color: c.primary,
-          ).animate().fadeIn(duration: 300.ms),
-          SizedBox(height: 12.h),
-          Text(
-            snapshot.statusLabel,
-            style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w800, color: c.onSurface),
+          Container(
+            width: 48.w,
+            height: 48.w,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(14.r),
+            ),
+            child: Icon(icon, color: Colors.white, size: 26.sp),
           ),
-          SizedBox(height: 6.h),
-          Text(
-            isPending
-                ? 'Đội vận hành đang xem yêu cầu và báo giá'
-                : '${order.providerName ?? 'Nhà xe'} · ${order.vehicleLabel}',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13.sp, color: c.onSurfaceMuted),
-          ),
-          if (!isPending && snapshot.etaMinutes > 0) ...[
-            SizedBox(height: 10.h),
-            UniSurfaceCard(
-              padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.schedule, color: c.primary, size: 18.sp),
-                  SizedBox(width: 8.w),
+          SizedBox(width: 14.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  snapshot.statusLabel,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18.sp,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (order.scheduledPickupAt != null) ...[
+                  SizedBox(height: 4.h),
                   Text(
-                    'Dự kiến ~${snapshot.etaMinutes} phút',
-                    style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600),
+                    order.scheduledPickupLabel,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.95),
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
-              ),
+                SizedBox(height: 6.h),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 12.sp,
+                    height: 1.35,
+                  ),
+                ),
+                if (awaiting && order.minutesUntilPickup != null) ...[
+                  SizedBox(height: 10.h),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Text(
+                      'Còn ~${order.minutesUntilPickup} phút đến giờ lấy đồ',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _TrackingStepper extends StatelessWidget {
-  const _TrackingStepper({required this.steps, required this.colors});
+class _OrderInfoCard extends StatelessWidget {
+  const _OrderInfoCard({required this.order, required this.colors});
+
+  final CustomerOrder order;
+  final UniMoveColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            order.activityRouteTitle,
+            style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700, color: c.onSurface),
+          ),
+          SizedBox(height: 4.h),
+          Text(
+            'Mã đơn: ${order.orderNumber}',
+            style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
+          ),
+          if (order.pickupAddress.isNotEmpty || order.deliveryAddress.isNotEmpty) ...[
+            SizedBox(height: 10.h),
+            _routeLine(Icons.trip_origin, order.pickupAddress, c.primary, c),
+            SizedBox(height: 6.h),
+            _routeLine(Icons.location_on_outlined, order.deliveryAddress, Colors.red.shade400, c),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _routeLine(IconData icon, String text, Color iconColor, UniMoveColors c) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16.sp, color: iconColor),
+        SizedBox(width: 8.w),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: 12.sp, color: c.onSurface, height: 1.3),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DriverCard extends StatelessWidget {
+  const _DriverCard({required this.order, required this.colors});
+
+  final CustomerOrder order;
+  final UniMoveColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final name = order.providerName ?? 'Tài xế';
+
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: c.border),
+      ),
+      child: Row(
+        children: [
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: 26.r,
+                backgroundColor: c.chipBg,
+                backgroundImage:
+                    order.providerAvatarUrl != null ? NetworkImage(order.providerAvatarUrl!) : null,
+                child: order.providerAvatarUrl == null
+                    ? Icon(Icons.person_outline, color: c.primary, size: 24.sp)
+                    : null,
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 14.w,
+                  height: 14.w,
+                  decoration: BoxDecoration(
+                    color: c.accentGreen,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: c.surface, width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15.sp)),
+                SizedBox(height: 2.h),
+                Row(
+                  children: [
+                    Icon(Icons.star_rounded, color: Colors.amber.shade700, size: 14.sp),
+                    Text(
+                      ' ${order.providerRating ?? 4.9}',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp),
+                    ),
+                    Text(
+                      ' · ${order.vehicleLabel}',
+                      style: TextStyle(fontSize: 12.sp, color: c.onSurfaceMuted),
+                    ),
+                  ],
+                ),
+                if (order.providerPlate != null && order.providerPlate!.isNotEmpty)
+                  Text(
+                    'Biển số: ${order.providerPlate}',
+                    style: TextStyle(fontSize: 11.sp, color: c.onSurfaceMuted),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveMapStrip extends StatelessWidget {
+  const _LiveMapStrip({required this.snapshot, required this.colors});
+
+  final TrackingSnapshot snapshot;
+  final UniMoveColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    return SizedBox(
+      height: 200.h,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: AppImages.mapPreview,
+            fit: BoxFit.cover,
+            memCacheWidth: 900,
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  c.background.withValues(alpha: 0.9),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 12.h,
+            left: 16.w,
+            right: 16.w,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+              decoration: BoxDecoration(
+                color: c.surface.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(12.r),
+                boxShadow: [
+                  BoxShadow(color: c.navBarShadow, blurRadius: 8, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule, color: c.primary, size: 18.sp),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: Text(
+                      'Dự kiến ${snapshot.etaMinutes} phút · ${snapshot.distanceKm} km',
+                      style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: c.onSurface),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackingTimeline extends StatelessWidget {
+  const _TrackingTimeline({required this.steps, required this.colors});
 
   final List<TrackingStep> steps;
   final UniMoveColors colors;
 
   @override
   Widget build(BuildContext context) {
-    final last = steps.length - 1;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < steps.length; i++)
-          Expanded(
-            child: _stepCell(
-              steps[i],
-              isFirst: i == 0,
-              isLast: i == last,
-              nextReached: i < last && _reached(steps[i + 1]),
-            ),
+    final c = colors;
+    return Container(
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tiến trình',
+            style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w800, color: c.onSurface),
           ),
-      ],
+          SizedBox(height: 14.h),
+          ...steps.asMap().entries.map((e) {
+            final i = e.key;
+            final step = e.value;
+            final isLast = i == steps.length - 1;
+            final reached = step.done || step.active;
+            return _TimelineRow(
+              step: step,
+              reached: reached,
+              isLast: isLast,
+              colors: c,
+            );
+          }),
+        ],
+      ),
     );
   }
+}
 
-  bool _reached(TrackingStep step) => step.done || step.active;
+class _TimelineRow extends StatelessWidget {
+  const _TimelineRow({
+    required this.step,
+    required this.reached,
+    required this.isLast,
+    required this.colors,
+  });
 
-  Widget _stepCell(
-    TrackingStep step, {
-    required bool isFirst,
-    required bool isLast,
-    required bool nextReached,
-  }) {
-    final active = step.active;
-    final done = step.done;
-    final reached = active || done;
+  final TrackingStep step;
+  final bool reached;
+  final bool isLast;
+  final UniMoveColors colors;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Hàng đường nối + chấm: line trái/phải nằm đúng giữa chấm.
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                height: 2,
-                color: !isFirst && reached ? colors.primary : Colors.transparent,
-              ),
-            ),
-            Container(
-              width: 32.w,
-              height: 32.w,
-              decoration: BoxDecoration(
-                color: reached ? colors.primary : colors.surfaceTint,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                done
-                    ? Icons.check
-                    : step.key == 'pending'
-                        ? Icons.request_quote_outlined
-                        : step.key == 'accepted'
-                            ? Icons.handshake_outlined
-                            : step.key == 'in_progress'
-                                ? Icons.local_shipping_outlined
-                                : Icons.inventory_2_outlined,
-                color: reached ? AppColors.onPrimary : colors.onSurfaceMuted,
-                size: 16.sp,
-              ),
-            ),
-            Expanded(
-              child: Container(
-                height: 2,
-                color: !isLast && nextReached ? colors.primary : Colors.transparent,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 6.h),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 2.w),
-          child: Text(
-            step.label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10.sp,
-              height: 1.15,
-              fontWeight: FontWeight.w600,
-              color: active ? colors.primary : colors.onSurfaceMuted,
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final icon = switch (step.key) {
+      'picking_up' => Icons.inventory_2_outlined,
+      'in_progress' => Icons.local_shipping_outlined,
+      'accepted' => Icons.handshake_outlined,
+      'completed' => Icons.check_circle_outline,
+      _ => Icons.event_available_outlined,
+    };
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 32.w,
+            child: Column(
+              children: [
+                Container(
+                  width: 28.w,
+                  height: 28.w,
+                  decoration: BoxDecoration(
+                    color: reached ? c.primary : c.surfaceTint,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    step.done ? Icons.check : icon,
+                    size: 14.sp,
+                    color: reached ? AppColors.onPrimary : c.onSurfaceMuted,
+                  ),
+                ),
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      margin: EdgeInsets.symmetric(vertical: 4.h),
+                      color: step.done ? c.primary.withValues(alpha: 0.5) : c.border,
+                    ),
+                  ),
+              ],
             ),
           ),
-        ),
-      ],
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 16.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    step.label,
+                    style: TextStyle(
+                      fontSize: 13.sp,
+                      fontWeight: step.active ? FontWeight.w700 : FontWeight.w600,
+                      color: step.active ? c.primary : (reached ? c.onSurface : c.onSurfaceMuted),
+                    ),
+                  ),
+                  if (step.active)
+                    Padding(
+                      padding: EdgeInsets.only(top: 2.h),
+                      child: Text(
+                        'Đang thực hiện',
+                        style: TextStyle(fontSize: 11.sp, color: c.primary),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -24,7 +22,7 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
   final _repo = PassItemRepository();
   late final TabController _tab = TabController(length: 3, vsync: this);
   final _searchCtrl = TextEditingController();
-  Timer? _debounce;
+  final _categoryScrollCtrl = ScrollController();
 
   String _category = 'Tất cả';
   String _provinceId = PassItemProvince.defaultId;
@@ -44,9 +42,9 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _tab.dispose();
     _searchCtrl.dispose();
+    _categoryScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -55,15 +53,6 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
     if (!mounted) return;
     setState(() => _provinceId = saved);
     await _load();
-  }
-
-  Future<void> _pickProvince() async {
-    final picked = await showPassItemProvincePicker(context, selectedId: _provinceId);
-    if (picked == null || picked == _provinceId) return;
-    await savePassItemsProvinceId(picked);
-    if (!mounted) return;
-    setState(() => _provinceId = picked);
-    _load();
   }
 
   Future<void> _load() async {
@@ -80,6 +69,15 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
       _favorites  = results[2];
       _loading    = false;
     });
+  }
+
+  Future<void> _pickProvince() async {
+    final picked = await showPassItemProvincePicker(context, selectedId: _provinceId);
+    if (picked == null || picked == _provinceId) return;
+    await savePassItemsProvinceId(picked);
+    if (!mounted) return;
+    setState(() => _provinceId = picked);
+    _load();
   }
 
   Future<void> _openCreate() async {
@@ -102,19 +100,7 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
         elevation: 0,
         scrolledUnderElevation: 0,
         iconTheme: IconThemeData(color: c.onSurface),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Chợ sinh viên', style: TextStyle(color: c.onSurface, fontWeight: FontWeight.w800, fontSize: 18)),
-            Row(
-              children: [
-                Icon(Icons.location_on, size: 12, color: c.primary),
-                const SizedBox(width: 3),
-                Text(_province.label, style: TextStyle(color: c.primary, fontWeight: FontWeight.w600, fontSize: 12)),
-              ],
-            ),
-          ],
-        ),
+        title: Text('Chợ sinh viên', style: TextStyle(color: c.onSurface, fontWeight: FontWeight.w800)),
         bottom: TabBar(
           controller: _tab,
           labelColor: c.primary,
@@ -131,12 +117,10 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openCreate,
-        elevation: 3,
         backgroundColor: c.primary,
         foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Đăng tin', style: TextStyle(fontWeight: FontWeight.w700)),
+        icon: const Icon(Icons.add),
+        label: const Text('Đăng tin'),
       ),
       body: TabBarView(
         controller: _tab,
@@ -152,67 +136,50 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
 
   Widget _browseTab(UniMoveColors c) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Row(
             children: [
               _provinceSelector(c),
-              const SizedBox(height: 10),
-              ShadInput(
-                controller: _searchCtrl,
-                placeholder: const Text('Tìm tủ, bàn, tủ lạnh, sách...'),
-                leading: Icon(LucideIcons.search, size: 18, color: c.primary),
-                onChanged: (v) {
-                  _keyword = v;
-                  _debounce?.cancel();
-                  _debounce = Timer(const Duration(milliseconds: 400), _load);
-                },
-              ),
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Danh mục',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.onSurfaceMuted),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: PassItemCategories.all.length + 1,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (_, i) {
-                    final label = i == 0 ? 'Tất cả' : PassItemCategories.all[i - 1];
-                    return _categoryChip(c, label);
-                  },
-                ),
-              ),
+              const Spacer(),
             ],
           ),
         ),
-        if (!_loading && _browse.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '${_browse.length} tin tại ${_province.label}',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.onSurfaceMuted),
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: ShadInput(
+            controller: _searchCtrl,
+            placeholder: const Text('Tìm tủ, bàn, tủ lạnh, sách...'),
+            leading: Icon(LucideIcons.search, size: 18, color: c.primary),
+            onChanged: (v) {
+              _keyword = v;
+              _load();
+            },
           ),
-        ],
+        ),
+        _filterLabel(c, 'Danh mục'),
+        SizedBox(
+          height: 44,
+          child: ListView.separated(
+            controller: _categoryScrollCtrl,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+            itemCount: PassItemCategories.all.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final label = i == 0 ? 'Tất cả' : PassItemCategories.all[i - 1];
+              return _categoryChip(c, label);
+            },
+          ),
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: _loading
-              ? Center(child: CircularProgressIndicator(color: c.primary))
+              ? const Center(child: CircularProgressIndicator())
               : _browse.isEmpty
                   ? _emptyBrowse(c)
                   : RefreshIndicator(
-                      color: c.primary,
                       onRefresh: _load,
                       child: GridView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
@@ -220,7 +187,7 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
                           crossAxisCount: 2,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 14,
-                          childAspectRatio: 0.54,
+                          mainAxisExtent: 236,
                         ),
                         itemCount: _browse.length,
                         itemBuilder: (_, i) => _gridCard(c, _browse[i]),
@@ -232,44 +199,40 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
   }
 
   Widget _provinceSelector(UniMoveColors c) {
-    return Material(
-      color: c.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: _pickProvince,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: c.border),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: c.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.location_on_rounded, color: c.primary, size: 16),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Khu vực', style: TextStyle(fontSize: 10, color: c.onSurfaceMuted)),
-                    Text(
-                      _province.label,
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.onSurface),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.keyboard_arrow_down_rounded, color: c.onSurfaceMuted, size: 22),
-            ],
-          ),
+    return GestureDetector(
+      onTap: _pickProvince,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on, color: c.primary, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              _province.label,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.onSurface),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.keyboard_arrow_down, color: c.primary, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filterLabel(UniMoveColors c, String text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.onSurfaceMuted),
         ),
       ),
     );
@@ -283,19 +246,117 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
         _load();
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: active ? c.primary : c.surfaceTint,
+          color: active ? c.primary : c.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: active ? c.primary : c.border.withValues(alpha: 0.6)),
+          border: Border.all(color: active ? c.primary : c.border),
         ),
         child: Text(
           label,
           style: TextStyle(
             color: active ? Colors.white : c.onSurface,
             fontWeight: FontWeight.w600,
-            fontSize: 12,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _listingCard(UniMoveColors c, PassItemPost post) {
+    final provinceLabel = PassItemProvince.resolve(PassItemProvince.provinceIdOf(post)).label;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () async {
+            await context.push('/pass-items/${post.id}');
+            _load();
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                PassItemImage(
+                  imageUrl: post.imageUrl,
+                  width: 96,
+                  height: 96,
+                  borderRadius: BorderRadius.circular(12),
+                  errorPlaceholder: Container(
+                    width: 96,
+                    height: 96,
+                    color: c.surfaceTint,
+                    child: Icon(Icons.inventory_2_outlined, color: c.onSurfaceMuted),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: c.onSurface),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            passItemPriceLabel(post),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                              color: post.isFree ? c.success : c.primary,
+                            ),
+                          ),
+                          if (post.isNegotiable) ...[
+                            const SizedBox(width: 6),
+                            Text('· có thương lượng',
+                                style: TextStyle(fontSize: 11, color: c.onSurfaceMuted)),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          _tag(c, post.condition.label),
+                          _tag(c, post.category),
+                          _tag(c, provinceLabel, accent: true),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.place_outlined, size: 13, color: c.onSurfaceMuted),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              post.area,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, color: c.onSurfaceMuted),
+                            ),
+                          ),
+                          Text(passItemTimeAgo(post.createdAt),
+                              style: TextStyle(fontSize: 11, color: c.onSurfaceMuted)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -303,21 +364,27 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
   }
 
   Widget _gridCard(UniMoveColors c, PassItemPost post) {
+    const textHeight = TextHeightBehavior(
+      applyHeightToFirstAscent: false,
+      applyHeightToLastDescent: false,
+    );
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.border.withValues(alpha: 0.7)),
+        border: Border.all(color: c.border.withValues(alpha: 0.55)),
         boxShadow: [
           BoxShadow(
-            color: c.navBarShadow.withValues(alpha: 0.35),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: c.navBarShadow.withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.hardEdge,
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -326,9 +393,10 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
               _load();
             },
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
+                  flex: 13,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -344,16 +412,14 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
                               end: Alignment.bottomRight,
                               colors: [
                                 c.surfaceTint,
-                                c.primary.withValues(alpha: 0.1),
+                                c.primary.withValues(alpha: 0.08),
                               ],
                             ),
                           ),
-                          child: Center(
-                            child: Icon(
-                              Icons.photo_outlined,
-                              color: c.primary.withValues(alpha: 0.45),
-                              size: 36,
-                            ),
+                          child: Icon(
+                            Icons.photo_outlined,
+                            color: c.onSurfaceMuted.withValues(alpha: 0.5),
+                            size: 36,
                           ),
                         ),
                       ),
@@ -365,51 +431,58 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        post.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: c.onSurface),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        passItemPriceLabel(post),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          color: post.isFree ? c.success : c.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _tag(c, post.category),
-                      const SizedBox(height: 5),
-                      Row(
+                Expanded(
+                  flex: 11,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 5),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.place_outlined, size: 12, color: c.onSurfaceMuted),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(
-                              post.area,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, color: c.onSurfaceMuted),
+                          Text(
+                            post.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textHeightBehavior: textHeight,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              height: 1.15,
+                              color: c.onSurface,
                             ),
                           ),
+                          const SizedBox(height: 2),
                           Text(
-                            passItemTimeAgo(post.createdAt),
-                            style: TextStyle(fontSize: 10, color: c.onSurfaceMuted.withValues(alpha: 0.85)),
+                            passItemPriceLabel(post),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textHeightBehavior: textHeight,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              height: 1.1,
+                              color: post.isFree ? c.success : c.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _tag(c, post.category),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${post.area} · ${passItemTimeAgo(post.createdAt)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textHeightBehavior: textHeight,
+                            style: TextStyle(
+                              fontSize: 10,
+                              height: 1.1,
+                              color: c.onSurfaceMuted,
+                            ),
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
@@ -422,24 +495,28 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
 
   Widget _imageBadge(UniMoveColors c, String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
 
   Widget _tag(UniMoveColors c, String text, {bool accent = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
       decoration: BoxDecoration(
         color: accent ? c.primary.withValues(alpha: 0.12) : c.surfaceTint,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         border: accent ? Border.all(color: c.primary.withValues(alpha: 0.35)) : null,
       ),
       child: Text(
@@ -491,8 +568,8 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 12,
-          mainAxisSpacing: 14,
-          childAspectRatio: 0.54,
+          mainAxisSpacing: 12,
+          mainAxisExtent: 236,
         ),
         itemCount: _favorites.length,
         itemBuilder: (_, i) => _favoriteCard(c, _favorites[i]),
@@ -643,36 +720,18 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
                 ],
                 const Spacer(),
                 _statusBadge(c, post.status),
-                const SizedBox(width: 4),
-                PopupMenuButton<String>(
+                const SizedBox(width: 8),
+                PopupMenuButton<PassItemStatus>(
                   icon: Icon(Icons.more_horiz, color: c.onSurfaceMuted),
-                  onSelected: (action) async {
-                    if (action == 'bump') {
-                      _bumpListing(post);
-                    } else {
-                      final s = {
-                        'reserved': PassItemStatus.reserved,
-                        'completed': PassItemStatus.completed,
-                        'hidden': PassItemStatus.hidden,
-                        'open': PassItemStatus.open,
-                      }[action];
-                      if (s != null) { await _repo.updateStatus(post.id, s); _load(); }
-                    }
+                  onSelected: (s) async {
+                    await _repo.updateStatus(post.id, s);
+                    _load();
                   },
-                  itemBuilder: (_) => [
-                    if (post.status == PassItemStatus.open || post.status == PassItemStatus.reserved)
-                      const PopupMenuItem(
-                        value: 'bump',
-                        child: Row(children: [
-                          Icon(Icons.rocket_launch_rounded, size: 16),
-                          SizedBox(width: 8),
-                          Text('Đẩy tin lên đầu'),
-                        ]),
-                      ),
-                    const PopupMenuItem(value: 'reserved', child: Text('Đang chờ chốt đơn')),
-                    const PopupMenuItem(value: 'completed', child: Text('Đã hoàn tất giao dịch')),
-                    const PopupMenuItem(value: 'hidden', child: Text('Ẩn tin đăng')),
-                    const PopupMenuItem(value: 'open', child: Text('Đăng lại tin')),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: PassItemStatus.reserved, child: Text('Đang chờ chốt đơn')),
+                    PopupMenuItem(value: PassItemStatus.completed, child: Text('Đã hoàn tất giao dịch')),
+                    PopupMenuItem(value: PassItemStatus.hidden, child: Text('Ẩn tin đăng')),
+                    PopupMenuItem(value: PassItemStatus.open, child: Text('Đăng lại tin')),
                   ],
                 ),
               ],
@@ -743,22 +802,6 @@ class _PassItemsPageState extends State<PassItemsPage> with SingleTickerProvider
       decoration: BoxDecoration(color: tint.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
       child: Text(status.label, style: TextStyle(color: tint, fontWeight: FontWeight.w700, fontSize: 12)),
     );
-  }
-
-  Future<void> _bumpListing(PassItemPost post) async {
-    final err = await _repo.bumpListing(post.id);
-    if (!mounted) return;
-    if (err != null) {
-      final msg = err.contains('too_many_requests') || err.contains('24h')
-          ? 'Chỉ được đẩy tin 1 lần / 24 giờ'
-          : 'Không thể đẩy tin lúc này';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('🚀 Đã đẩy tin lên đầu!')),
-      );
-      _load();
-    }
   }
 
   Widget _empty(UniMoveColors c, String text) {

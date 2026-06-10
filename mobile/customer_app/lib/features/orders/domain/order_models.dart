@@ -94,11 +94,78 @@ class CustomerOrder {
   final DateTime? scheduledPickupAt;
   final String? quoteReferenceId;
 
+  bool get isAwaitingScheduledPickup {
+    final at = scheduledPickupAt;
+    if (at == null) return false;
+    if (status == OrderStatus.completed || status == OrderStatus.cancelled) return false;
+    if (status == OrderStatus.pickingUp || status == OrderStatus.inProgress) return false;
+    return DateTime.now().isBefore(at);
+  }
+
+  bool get showLiveTracking =>
+      !isAwaitingScheduledPickup &&
+      (status == OrderStatus.pickingUp || status == OrderStatus.inProgress);
+
+  String get scheduledPickupLabel {
+    final dt = scheduledPickupAt;
+    if (dt == null) return '';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final pickedDay = DateTime(dt.year, dt.month, dt.day);
+    final dayLabel = pickedDay == today
+        ? 'Hôm nay'
+        : pickedDay == today.add(const Duration(days: 1))
+            ? 'Ngày mai'
+            : '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$dayLabel · $h:$m';
+  }
+
+  int? get minutesUntilPickup {
+    final at = scheduledPickupAt;
+    if (at == null) return null;
+    final diff = at.difference(DateTime.now()).inMinutes;
+    return diff > 0 ? diff : null;
+  }
+
   String get packageDisplay => switch (packageLabel) {
         ServicePackageLabel.economy => 'Gói Economy',
         ServicePackageLabel.standard => 'Gói Standard',
         ServicePackageLabel.premium => 'Gói Premium',
       };
+
+  /// Tiêu đề danh sách Hoạt động — ưu tiên tuyến đường thay vì tên gói.
+  String get activityRouteTitle {
+    final from = _shortAddress(pickupAddress);
+    final dest = deliveryAddress.trim();
+    final to = dest.isEmpty || dest == 'Chưa nhập điểm đến' ? '' : _shortAddress(deliveryAddress);
+    if (from.isNotEmpty && to.isNotEmpty) return '$from → $to';
+    if (from.isNotEmpty) return 'Từ $from';
+    if (to.isNotEmpty) return 'Đến $to';
+    return '#$orderNumber';
+  }
+
+  String get activityMetaLine {
+    final parts = <String>['#$orderNumber', packageDisplay];
+    if (scheduledPickupAt != null && status.isActive) {
+      parts.add('Lấy $scheduledPickupLabel');
+    }
+    final provider = providerName?.trim();
+    if (provider != null && provider.isNotEmpty) parts.add(provider);
+    return parts.join(' · ');
+  }
+
+  static String _shortAddress(String address, {int maxLen = 26}) {
+    var s = address.trim();
+    if (s.isEmpty) return '';
+    final comma = s.indexOf(',');
+    if (comma > 0 && comma <= maxLen + 10) {
+      s = s.substring(0, comma).trim();
+    }
+    if (s.length <= maxLen) return s;
+    return '${s.substring(0, maxLen)}…';
+  }
 
   String get formattedPrice {
     final s = totalPrice.toString();
@@ -134,6 +201,7 @@ class TrackingSnapshot {
     required this.driverLat,
     required this.driverLng,
     required this.statusLabel,
+    required this.isAwaitingScheduledPickup,
   });
 
   final CustomerOrder order;
@@ -143,4 +211,7 @@ class TrackingSnapshot {
   final double driverLat;
   final double driverLng;
   final String statusLabel;
+  final bool isAwaitingScheduledPickup;
+
+  bool get showLiveTracking => order.showLiveTracking;
 }
