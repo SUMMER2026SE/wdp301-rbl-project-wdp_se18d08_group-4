@@ -6,26 +6,17 @@ import '../../../core/mock/mock_auth_session.dart';
 import '../../../core/mock/mock_provider_data.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/services/auth_session_notifier.dart';
+import '../../profile/data/provider_profile_repository.dart';
 import '../domain/provider_profile.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(apiClientProvider));
 });
 
+// Lấy profile từ GET /providers/me (đầy đủ hơn /auth/me).
 final providerProfileProvider = FutureProvider<ProviderProfile?>((ref) async {
   if (!await AuthTokenStorage.instance.hasSession()) return null;
-  if (await AuthTokenStorage.instance.isMockSession()) {
-    return ProviderProfile.fromJson(MockProviderData.userJson);
-  }
-  try {
-    return await ref.watch(authRepositoryProvider).fetchProfile();
-  } on ApiException catch (e) {
-    if (e.statusCode == 401 && DevConfig.useMockAuth) {
-      await MockAuthSession.signIn();
-      return ProviderProfile.fromJson(MockProviderData.userJson);
-    }
-    rethrow;
-  }
+  return ref.watch(providerProfileRepositoryProvider).fetchProfile();
 });
 
 class AuthRepository {
@@ -36,10 +27,10 @@ class AuthRepository {
 
   Future<bool> get isSignedIn => _storage.hasSession();
 
-  Future<ProviderProfile?> fetchProfile() async {
+  Future<ProviderProfile?> fetchProfileFallback() async {
+    if (await _storage.isMockSession()) return MockProviderData.profile;
     final envelope = await _api.guard(() => _api.get('/auth/me'));
-    final me = Map<String, dynamic>.from(envelope['data'] as Map);
-    return ProviderProfile.fromJson(me);
+    return ProviderProfile.fromJson(Map<String, dynamic>.from(envelope['data'] as Map));
   }
 
   Future<void> signIn({required String email, required String password}) async {
@@ -66,6 +57,9 @@ class AuthRepository {
     required String password,
     required String fullName,
     required String businessName,
+    required String phone,
+    required String ward,
+    String address = '',
   }) async {
     if (password.length < 8) {
       throw const AuthException('Mật khẩu tối thiểu 8 ký tự.');
@@ -77,12 +71,16 @@ class AuthRepository {
         'password': password,
         'full_name': fullName.trim(),
         'business_name': businessName.trim(),
+        'phone': phone.trim(),
+        'ward': ward,
+        'address': address.trim(),
         'role': 'provider',
       }),
     );
 
     await _persistAuth(envelope);
-    authSessionNotifier.notifyAuthChanged();
+    // Không notify GoRouter ở đây — để register_page tự navigate sang /driver-registration.
+    // notifyAuthChanged() sẽ được gọi sau khi hoàn tất driver registration.
   }
 
   Future<void> signOut() async {

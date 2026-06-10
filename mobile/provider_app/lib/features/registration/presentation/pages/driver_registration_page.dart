@@ -1,65 +1,174 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../core/auth/auth_token_storage.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/services/auth_session_notifier.dart';
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/dark_glass_background.dart';
 import '../../../../core/widgets/shad_screen_scope.dart';
+import '../../../auth/data/auth_repository.dart';
+import '../../../profile/data/provider_profile_repository.dart';
 
 enum _VehicleType { motorbike, pickup, truck }
 
-class DriverRegistrationPage extends StatefulWidget {
+extension _VehicleTypeExt on _VehicleType {
+  String get apiValue => switch (this) {
+        _VehicleType.motorbike => 'motorbike',
+        _VehicleType.pickup => 'small_truck',
+        _VehicleType.truck => 'medium_truck',
+      };
+
+  int get defaultBasePrice => switch (this) {
+        _VehicleType.motorbike => 80000,
+        _VehicleType.pickup => 150000,
+        _VehicleType.truck => 250000,
+      };
+}
+
+class DriverRegistrationPage extends ConsumerStatefulWidget {
   const DriverRegistrationPage({super.key});
 
   @override
-  State<DriverRegistrationPage> createState() => _DriverRegistrationPageState();
+  ConsumerState<DriverRegistrationPage> createState() => _DriverRegistrationPageState();
 }
 
-class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
-  static const _stepLabels = ['Thông tin cá nhân', 'Chi tiết phương tiện', 'Tải lên hồ sơ', 'Hoàn tất'];
+class _DriverRegistrationPageState extends ConsumerState<DriverRegistrationPage> {
+  static const _stepLabels = ['Chi tiết phương tiện', 'Tải lên hồ sơ', 'Hoàn tất'];
+  static const _allSteps   = ['Đăng ký đối tác', 'Chi tiết phương tiện', 'Tải lên hồ sơ'];
+
+  final _picker = ImagePicker();
 
   int _step = 0;
+  bool _submitting = false;
+  String _uploadStatus = '';
+  String? _error;
 
-  // Step 1
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _addressCtrl = TextEditingController();
-
-  // Step 2
+  // Step 0 — vehicle
   _VehicleType? _vehicle;
   final _plateCtrl = TextEditingController();
-  bool _vehiclePhoto = false;
+  XFile? _vehiclePhotoFile;
+  Uint8List? _vehiclePhotoPreview;
 
-  // Step 3
-  bool _idFront = false;
-  bool _licenseFront = false;
-  bool _licenseBack = false;
-  bool _registration = false;
-
-  String? _error;
+  // Step 2 — documents
+  XFile? _idFrontFile;
+  Uint8List? _idFrontPreview;
+  XFile? _idBackFile;
+  Uint8List? _idBackPreview;
+  XFile? _licenseFrontFile;
+  Uint8List? _licenseFrontPreview;
+  XFile? _licenseBackFile;
+  Uint8List? _licenseBackPreview;
+  XFile? _registrationFile;
+  Uint8List? _registrationPreview;
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    _emailCtrl.dispose();
-    _addressCtrl.dispose();
     _plateCtrl.dispose();
     super.dispose();
   }
 
-  bool get _isLastInputStep => _step == 2;
+  // ── Image picking ─────────────────────────────────────────────────────────
 
-  void _next() {
+  Future<void> _pickImage(String docType) async {
+    final source = await _showSourceSheet();
+    if (source == null) return;
+    try {
+      final file = await _picker.pickImage(source: source, imageQuality: 85, maxWidth: 1920);
+      if (file == null || !mounted) return;
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        switch (docType) {
+          case 'vehicle_photo':
+            _vehiclePhotoFile = file;
+            _vehiclePhotoPreview = bytes;
+          case 'cccd_front':
+            _idFrontFile = file;
+            _idFrontPreview = bytes;
+          case 'cccd_back':
+            _idBackFile = file;
+            _idBackPreview = bytes;
+          case 'license_front':
+            _licenseFrontFile = file;
+            _licenseFrontPreview = bytes;
+          case 'license_back':
+            _licenseBackFile = file;
+            _licenseBackPreview = bytes;
+          case 'vehicle_registration':
+            _registrationFile = file;
+            _registrationPreview = bytes;
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Không thể chọn ảnh: $e');
+    }
+  }
+
+  Future<ImageSource?> _showSourceSheet() {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final c = UniMoveColors.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
+                ),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(color: c.primaryContainer, borderRadius: BorderRadius.circular(10)),
+                    child: Icon(LucideIcons.camera, color: c.primary, size: 20),
+                  ),
+                  title: const Text('Chụp ảnh', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Mở camera để chụp trực tiếp'),
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(color: c.iconBgSecondary, borderRadius: BorderRadius.circular(10)),
+                    child: Icon(LucideIcons.image, color: c.primaryLight, size: 20),
+                  ),
+                  title: const Text('Chọn từ thư viện', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Chọn ảnh đã có trong máy'),
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+
+  bool get _isLastInputStep => _step == 1;
+
+  Future<void> _next() async {
     setState(() => _error = null);
+
     if (_step == 0) {
-      if (_nameCtrl.text.trim().isEmpty || _phoneCtrl.text.trim().isEmpty) {
-        setState(() => _error = 'Vui lòng nhập họ tên và số điện thoại.');
-        return;
-      }
-    } else if (_step == 1) {
       if (_vehicle == null) {
         setState(() => _error = 'Vui lòng chọn loại xe.');
         return;
@@ -68,30 +177,84 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
         setState(() => _error = 'Vui lòng nhập biển số xe.');
         return;
       }
-    } else if (_step == 2) {
-      if (!_idFront || !_licenseFront || !_licenseBack) {
-        setState(() => _error = 'Cần tải lên CCCD và bằng lái (2 mặt).');
+    } else if (_step == 1) {
+      if (_idFrontFile == null || _idBackFile == null || _licenseFrontFile == null || _licenseBackFile == null) {
+        setState(() => _error = 'Cần tải lên CCCD (2 mặt) và bằng lái (2 mặt).');
         return;
       }
+      await _submitRegistration();
+      return;
     }
+
     setState(() => _step += 1);
+  }
+
+  Future<void> _submitRegistration() async {
+    setState(() { _submitting = true; _uploadStatus = 'Đang cập nhật thông tin...'; });
+    try {
+      final isMock = await AuthTokenStorage.instance.isMockSession();
+      final repo = ref.read(providerProfileRepositoryProvider);
+
+      if (!isMock) {
+        await repo.updateProfile(
+          vehicleType: _vehicle?.apiValue,
+          basePrice: _vehicle?.defaultBasePrice,
+        );
+
+        final docs = <(XFile, String)>[
+          if (_idFrontFile != null) (_idFrontFile!, 'cccd_front'),
+          if (_idBackFile != null) (_idBackFile!, 'cccd_back'),
+          if (_licenseFrontFile != null) (_licenseFrontFile!, 'license_front'),
+          if (_licenseBackFile != null) (_licenseBackFile!, 'license_back'),
+          if (_registrationFile != null) (_registrationFile!, 'vehicle_registration'),
+          if (_vehiclePhotoFile != null) (_vehiclePhotoFile!, 'vehicle_photo'),
+        ];
+
+        for (var i = 0; i < docs.length; i++) {
+          final (file, docType) = docs[i];
+          if (mounted) {
+            setState(() => _uploadStatus = 'Đang tải lên tài liệu ${i + 1}/${docs.length}...');
+          }
+          final bytes = await file.readAsBytes();
+          await repo.uploadDocument(docType: docType, fileBytes: bytes, filename: file.name);
+        }
+
+        ref.invalidate(providerProfileProvider);
+      } else {
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+      }
+
+      if (!mounted) return;
+      setState(() => _step += 1);
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() { _submitting = false; _uploadStatus = ''; });
+    }
   }
 
   void _back() {
     if (_step == 0) {
       context.pop();
     } else {
-      setState(() {
-        _error = null;
-        _step -= 1;
-      });
+      setState(() { _error = null; _step -= 1; });
     }
   }
 
   void _goHome() {
-    final hasSession = AuthTokenStorage.instance.cachedToken?.isNotEmpty == true;
-    context.go(hasSession ? '/home' : '/login');
+    authSessionNotifier.notifyAuthChanged();
+    context.go('/pending');
   }
+
+  void _onCheckStatus() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Hồ sơ đang được xét duyệt (24–48 giờ)')),
+    );
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +269,7 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
             children: [
               const DarkGlassBackground(variant: DarkGlassVariant.subtle),
               SafeArea(
-                child: _step == 3
+                child: _step == 2
                     ? _PendingView(onCheck: _onCheckStatus, onHome: _goHome)
                     : Column(
                         children: [
@@ -116,9 +279,8 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
                             child: ListView(
                               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                               children: [
-                                if (_step == 0) ..._personalStep(theme, c),
-                                if (_step == 1) ..._vehicleStep(theme, c),
-                                if (_step == 2) ..._documentsStep(theme, c),
+                                if (_step == 0) ..._vehicleStep(theme, c),
+                                if (_step == 1) ..._documentsStep(theme, c),
                                 if (_error != null) ...[
                                   const SizedBox(height: 16),
                                   _errorBox(theme, c, _error!),
@@ -148,7 +310,7 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
           ),
           const SizedBox(width: 4),
           Text(
-            'Đăng ký tài xế',
+            'Đăng ký đối tác',
             style: theme.textTheme.h4.copyWith(fontWeight: FontWeight.w800, color: c.onSurface),
           ),
         ],
@@ -156,15 +318,13 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
     );
   }
 
-  void _onCheckStatus() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Hồ sơ đang được xét duyệt (24–48 giờ)')),
-    );
-  }
-
-  // ---------- Progress ----------
   Widget _progress(ShadThemeData theme, UniMoveColors c) {
-    final pct = (_step + 1) / 4;
+    // Bước 1 "Đăng ký đối tác" luôn done khi vào trang này
+    // _step 0 → Bước 2 "Chi tiết phương tiện"
+    // _step 1 → Bước 3 "Tải lên hồ sơ"
+    final overallStep = _step + 2;
+    final pct = overallStep / 3;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
       child: Column(
@@ -173,11 +333,9 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
           Row(
             children: [
               Text(
-                'BƯỚC ${_step + 1} TRÊN 4',
+                'BƯỚC $overallStep TRÊN 3',
                 style: theme.textTheme.small.copyWith(
-                  color: c.onSurfaceMuted,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
+                  color: c.onSurfaceMuted, fontWeight: FontWeight.w700, letterSpacing: 0.5,
                 ),
               ),
               const Spacer(),
@@ -192,12 +350,62 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
             _stepLabels[_step],
             style: theme.textTheme.h3.copyWith(fontWeight: FontWeight.w800, color: c.onSurface),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
+          // Visual stepper
+          Row(
+            children: [
+              for (var i = 0; i < _allSteps.length; i++) ...[
+                if (i > 0)
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      margin: const EdgeInsets.only(bottom: 18),
+                      color: i <= _step + 1 ? c.primary : c.border,
+                    ),
+                  ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i <= _step + 1 ? c.primary : c.border,
+                        ),
+                        child: i < _step + 1
+                            ? const Icon(LucideIcons.check, size: 14, color: Colors.white)
+                            : Text(
+                                '${i + 1}',
+                                style: theme.textTheme.small.copyWith(
+                                  color: i == _step + 1 ? Colors.white : c.onSurfaceMuted,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _allSteps[i],
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.small.copyWith(
+                          fontSize: 10,
+                          color: i <= _step + 1 ? c.onSurface : c.onSurfaceMuted,
+                          fontWeight: i == _step + 1 ? FontWeight.w700 : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: LinearProgressIndicator(
               value: pct,
-              minHeight: 6,
+              minHeight: 5,
               backgroundColor: c.border,
               valueColor: AlwaysStoppedAnimation(c.primary),
             ),
@@ -207,122 +415,45 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
     );
   }
 
-  // ---------- Step 1: personal ----------
-  List<Widget> _personalStep(ShadThemeData theme, UniMoveColors c) {
-    return [
-      Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [c.primary, c.primaryLight],
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Bắt đầu hành trình của bạn',
-                      style: theme.textTheme.p.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Cung cấp thông tin cơ bản để chúng tôi xác thực hồ sơ tài xế.',
-                    style: theme.textTheme.small.copyWith(color: Colors.white70, height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(LucideIcons.contact, color: Colors.white, size: 28),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 20),
-      _field(theme, c, 'Họ và tên', _nameCtrl, 'Nguyễn Văn A', LucideIcons.user),
-      const SizedBox(height: 16),
-      _field(theme, c, 'Số điện thoại', _phoneCtrl, '0901 234 567', LucideIcons.phone,
-          keyboard: TextInputType.phone),
-      const SizedBox(height: 16),
-      _field(theme, c, 'Địa chỉ Email', _emailCtrl, 'email@vi-du.com', LucideIcons.mail,
-          keyboard: TextInputType.emailAddress),
-      const SizedBox(height: 16),
-      _field(theme, c, 'Địa chỉ thường trú', _addressCtrl, 'Số nhà, đường, Quận/Huyện, Tỉnh/TP',
-          LucideIcons.mapPin, maxLines: 2),
-      const SizedBox(height: 20),
-      _securityNote(theme, c),
-    ];
-  }
+  // ── Step 0: vehicle ──────────────────────────────────────────────────────
 
-  Widget _securityNote(ShadThemeData theme, UniMoveColors c) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.surfaceHigh,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.border),
-      ),
-      child: Row(
-        children: [
-          Icon(LucideIcons.shieldCheck, color: c.success, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Cam kết bảo mật',
-                    style: theme.textTheme.small.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
-                const SizedBox(height: 2),
-                Text(
-                  'Thông tin được mã hoá theo tiêu chuẩn, chỉ dùng cho mục đích xác thực đối tác.',
-                  style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted, height: 1.4),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------- Step 2: vehicle ----------
   List<Widget> _vehicleStep(ShadThemeData theme, UniMoveColors c) {
     return [
-      Text('Chọn loại xe', style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
+      Text('Chọn loại xe',
+          style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
       const SizedBox(height: 10),
-      _vehicleOption(theme, c, _VehicleType.motorbike, LucideIcons.bike, 'Xe máy', 'Linh hoạt & nhanh'),
+      _vehicleOption(theme, c, _VehicleType.motorbike, LucideIcons.bike, 'Xe máy',
+          'Linh hoạt & nhanh — phù hợp đồ nhẹ < 50kg'),
       const SizedBox(height: 10),
-      _vehicleOption(theme, c, _VehicleType.pickup, LucideIcons.truck, 'Xe bán tải', 'Chở hàng đa năng'),
+      _vehicleOption(theme, c, _VehicleType.pickup, LucideIcons.truck, 'Xe bán tải / Xe tải nhỏ',
+          'Chở hàng đa năng — khoảng 500kg'),
       const SizedBox(height: 10),
-      _vehicleOption(theme, c, _VehicleType.truck, LucideIcons.truck, 'Xe tải', 'Tải trọng lớn'),
+      _vehicleOption(theme, c, _VehicleType.truck, LucideIcons.truck, 'Xe tải vừa',
+          'Tải trọng lớn — khoảng 1 tấn'),
       const SizedBox(height: 20),
-      Text('Biển số xe', style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
+      Text('Biển số xe',
+          style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
       const SizedBox(height: 10),
-      _field(theme, c, '', _plateCtrl, 'VD: 59A-123.45', LucideIcons.idCard),
+      _field(theme, c, '', _plateCtrl, 'VD: 43A-123.45', LucideIcons.idCard),
       const SizedBox(height: 8),
       Text('Nhập chính xác biển số hiển thị trên giấy tờ xe.',
           style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted)),
       const SizedBox(height: 20),
-      Text('Hình ảnh xe', style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
+      Text('Hình ảnh xe',
+          style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
       const SizedBox(height: 10),
-      _uploadBox(theme, c, 'Tải lên ảnh xe', 'Chụp rõ biển số và thân xe (tối đa 5MB)', _vehiclePhoto,
-          () => setState(() => _vehiclePhoto = !_vehiclePhoto)),
+      _uploadBox(theme, c,
+        title: 'Tải lên ảnh xe',
+        subtitle: 'Chụp rõ biển số và thân xe (tối đa 10MB)',
+        file: _vehiclePhotoFile,
+        preview: _vehiclePhotoPreview,
+        onTap: () => _pickImage('vehicle_photo'),
+      ),
     ];
   }
 
-  Widget _vehicleOption(
-      ShadThemeData theme, UniMoveColors c, _VehicleType type, IconData icon, String title, String subtitle) {
+  Widget _vehicleOption(ShadThemeData theme, UniMoveColors c, _VehicleType type, IconData icon,
+      String title, String subtitle) {
     final selected = _vehicle == type;
     return Material(
       color: Colors.transparent,
@@ -346,7 +477,8 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
                   children: [
                     Text(title,
                         style: theme.textTheme.p.copyWith(
-                            fontWeight: FontWeight.w700, color: selected ? Colors.white : c.onSurface)),
+                            fontWeight: FontWeight.w700,
+                            color: selected ? Colors.white : c.onSurface)),
                     Text(subtitle,
                         style: theme.textTheme.small
                             .copyWith(color: selected ? Colors.white70 : c.onSurfaceMuted)),
@@ -361,7 +493,8 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
     );
   }
 
-  // ---------- Step 3: documents ----------
+  // ── Step 1: documents ────────────────────────────────────────────────────
+
   List<Widget> _documentsStep(ShadThemeData theme, UniMoveColors c) {
     return [
       Text('Căn cước công dân (CCCD)',
@@ -370,37 +503,81 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
       Text('Tải ảnh chụp mặt trước rõ nét của CCCD/CMND còn hiệu lực.',
           style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted)),
       const SizedBox(height: 10),
-      _uploadBox(theme, c, 'Tải lên mặt trước CCCD', 'Định dạng JPG, PNG (tối đa 5MB)', _idFront,
-          () => setState(() => _idFront = !_idFront)),
+      _uploadBox(theme, c,
+        title: 'Mặt trước CCCD',
+        subtitle: 'JPG, PNG, WEBP (tối đa 10MB)',
+        file: _idFrontFile,
+        preview: _idFrontPreview,
+        onTap: () => _pickImage('cccd_front'),
+      ),
+      const SizedBox(height: 10),
+      _uploadBox(theme, c,
+        title: 'Mặt sau CCCD',
+        subtitle: 'JPG, PNG, WEBP (tối đa 10MB)',
+        file: _idBackFile,
+        preview: _idBackPreview,
+        onTap: () => _pickImage('cccd_back'),
+      ),
       const SizedBox(height: 20),
-      Text('Bằng lái xe', style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
+      Text('Bằng lái xe',
+          style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
       const SizedBox(height: 6),
-      Text('Chụp cả hai mặt của giấy phép lái xe để hệ thống xác thực hạng bằng.',
+      Text('Chụp cả hai mặt của giấy phép lái xe.',
           style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted)),
       const SizedBox(height: 10),
-      _uploadBox(theme, c, 'Mặt trước bằng lái', 'JPG, PNG', _licenseFront,
-          () => setState(() => _licenseFront = !_licenseFront)),
+      _uploadBox(theme, c,
+        title: 'Mặt trước bằng lái',
+        subtitle: 'JPG, PNG, WEBP',
+        file: _licenseFrontFile,
+        preview: _licenseFrontPreview,
+        onTap: () => _pickImage('license_front'),
+      ),
       const SizedBox(height: 10),
-      _uploadBox(theme, c, 'Mặt sau bằng lái', 'JPG, PNG', _licenseBack,
-          () => setState(() => _licenseBack = !_licenseBack)),
+      _uploadBox(theme, c,
+        title: 'Mặt sau bằng lái',
+        subtitle: 'JPG, PNG, WEBP',
+        file: _licenseBackFile,
+        preview: _licenseBackPreview,
+        onTap: () => _pickImage('license_back'),
+      ),
       const SizedBox(height: 20),
       Text('Đăng ký xe (Cà vẹt)',
           style: theme.textTheme.large.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
+      const SizedBox(height: 6),
+      Text('Không bắt buộc — có thể bổ sung sau.',
+          style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted)),
       const SizedBox(height: 10),
-      _uploadBox(theme, c, 'Giấy đăng ký xe', 'Bản gốc hoặc bản sao công chứng', _registration,
-          () => setState(() => _registration = !_registration)),
+      _uploadBox(theme, c,
+        title: 'Giấy đăng ký xe',
+        subtitle: 'Bản gốc hoặc bản sao công chứng',
+        file: _registrationFile,
+        preview: _registrationPreview,
+        onTap: () => _pickImage('vehicle_registration'),
+        optional: true,
+      ),
     ];
   }
 
+  // ── Shared widgets ────────────────────────────────────────────────────────
+
   Widget _uploadBox(
-      ShadThemeData theme, UniMoveColors c, String title, String subtitle, bool done, VoidCallback onTap) {
+    ShadThemeData theme,
+    UniMoveColors c, {
+    required String title,
+    required String subtitle,
+    required XFile? file,
+    required Uint8List? preview,
+    required VoidCallback onTap,
+    bool optional = false,
+  }) {
+    final done = file != null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: done ? c.iconBgTertiary : c.surfaceHigh,
             borderRadius: BorderRadius.circular(16),
@@ -411,28 +588,66 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
           ),
           child: Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: done ? c.success : c.primary,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(done ? LucideIcons.check : LucideIcons.camera, color: Colors.white, size: 22),
+              // Thumbnail or icon
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: done && preview != null
+                    ? Image.memory(preview, width: 52, height: 52, fit: BoxFit.cover)
+                    : Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: c.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(LucideIcons.camera, color: Colors.white, size: 24),
+                      ),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(done ? '$title — đã chọn' : title,
-                        style: theme.textTheme.p.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
-                    Text(subtitle, style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            done ? '$title — đã chọn' : title,
+                            style: theme.textTheme.p
+                                .copyWith(fontWeight: FontWeight.w700, color: c.onSurface),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (optional && !done)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: c.surfaceHigh,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: c.border),
+                            ),
+                            child: Text('Tuỳ chọn',
+                                style: theme.textTheme.small.copyWith(
+                                    color: c.onSurfaceMuted, fontSize: 10)),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      done ? file.name : subtitle,
+                      style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
-              Icon(done ? LucideIcons.circleCheck : LucideIcons.upload,
-                  color: done ? c.success : c.onSurfaceMuted, size: 20),
+              const SizedBox(width: 8),
+              Icon(
+                done ? LucideIcons.circleCheck : LucideIcons.upload,
+                color: done ? c.success : c.onSurfaceMuted,
+                size: 22,
+              ),
             ],
           ),
         ),
@@ -440,15 +655,15 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
     );
   }
 
-  // ---------- Shared ----------
-  Widget _field(ShadThemeData theme, UniMoveColors c, String label, TextEditingController ctrl,
-      String hint, IconData icon,
+  Widget _field(ShadThemeData theme, UniMoveColors c, String label,
+      TextEditingController ctrl, String hint, IconData icon,
       {TextInputType? keyboard, int maxLines = 1}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (label.isNotEmpty) ...[
-          Text(label, style: theme.textTheme.small.copyWith(fontWeight: FontWeight.w600, color: c.onSurface)),
+          Text(label,
+              style: theme.textTheme.small.copyWith(fontWeight: FontWeight.w600, color: c.onSurface)),
           const SizedBox(height: 8),
         ],
         ShadInput(
@@ -475,7 +690,8 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
           const Icon(LucideIcons.circleAlert, color: Color(0xFFDC2626), size: 18),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(msg, style: theme.textTheme.small.copyWith(color: const Color(0xFF991B1B))),
+            child: Text(msg,
+                style: theme.textTheme.small.copyWith(color: const Color(0xFF991B1B))),
           ),
         ],
       ),
@@ -489,50 +705,83 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
         color: c.glassCard,
         border: Border(top: BorderSide(color: c.glassBorder)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (_step > 0) ...[
-            Expanded(
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: c.onSurface,
-                  side: BorderSide(color: c.border),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _back,
-                child: const Text('Quay lại'),
-              ),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            flex: 2,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: c.primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: _next,
+          if (_submitting && _uploadStatus.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(_isLastInputStep ? 'Hoàn tất đăng ký' : 'Tiếp tục',
-                      style: const TextStyle(fontWeight: FontWeight.w800)),
-                  const SizedBox(width: 8),
-                  const Icon(LucideIcons.arrowRight, size: 18),
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: c.primary),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(_uploadStatus,
+                      style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted)),
                 ],
               ),
             ),
+          ],
+          Row(
+            children: [
+              if (_step > 0) ...[
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: c.onSurface,
+                      side: BorderSide(color: c.border),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _submitting ? null : _back,
+                    child: const Text('Quay lại'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: c.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _submitting ? null : _next,
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _isLastInputStep ? 'Hoàn tất đăng ký' : 'Tiếp tục',
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(LucideIcons.arrowRight, size: 18),
+                          ],
+                        ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 }
+
+// ── Pending screen ────────────────────────────────────────────────────────────
 
 class _PendingView extends StatelessWidget {
   const _PendingView({required this.onCheck, required this.onHome});
@@ -557,7 +806,10 @@ class _PendingView extends StatelessWidget {
               gradient: LinearGradient(colors: [c.primary, c.primaryLight]),
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(color: c.primary.withValues(alpha: 0.35), blurRadius: 24, offset: const Offset(0, 10)),
+                BoxShadow(
+                    color: c.primary.withValues(alpha: 0.35),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10)),
               ],
             ),
             child: const Icon(LucideIcons.clock, color: Colors.white, size: 44),
@@ -631,7 +883,8 @@ class _PendingView extends StatelessWidget {
     );
   }
 
-  Widget _infoRow(ShadThemeData theme, UniMoveColors c, Color tint, IconData icon, String title, String body) {
+  Widget _infoRow(ShadThemeData theme, UniMoveColors c, Color tint, IconData icon,
+      String title, String body) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -646,9 +899,13 @@ class _PendingView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: theme.textTheme.p.copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
+              Text(title,
+                  style: theme.textTheme.p
+                      .copyWith(fontWeight: FontWeight.w700, color: c.onSurface)),
               const SizedBox(height: 2),
-              Text(body, style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted, height: 1.45)),
+              Text(body,
+                  style: theme.textTheme.small
+                      .copyWith(color: c.onSurfaceMuted, height: 1.45)),
             ],
           ),
         ),

@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/pages/login_page.dart';
+import '../../features/auth/presentation/pages/pending_approval_page.dart';
 import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/documents/presentation/pages/documents_page.dart';
+import '../../features/registration/presentation/pages/driver_registration_page.dart';
 import '../../features/earnings/presentation/pages/provider_earnings_history_page.dart';
 import '../../features/payments/presentation/pages/provider_payout_settings_page.dart';
 import '../../features/messages/presentation/pages/chat_thread_page.dart';
@@ -25,12 +27,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/splash',
     refreshListenable: authSessionNotifier,
     redirect: (context, state) {
-      final location = state.matchedLocation;
+      final location = state.uri.path;
       final isAuthRoute = location == '/login' || location == '/register';
       final isSplash = location == '/splash';
       final isOnboarding = location == '/onboarding';
+      final isDriverRegistration = location == '/driver-registration';
+      final isPending = location == '/pending';
 
-      if (isSplash || isOnboarding) return null;
+      if (isSplash || isOnboarding || isDriverRegistration) return null;
 
       final hasSession = AuthTokenStorage.instance.cachedToken?.isNotEmpty == true;
 
@@ -39,6 +43,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return '/login';
       }
 
+      // Provider chưa được duyệt → chỉ cho vào /pending
+      final status = AuthTokenStorage.instance.cachedStatus;
+      if (status == 'pending_verification') {
+        if (isPending) return null;
+        return '/pending';
+      }
+
+      if (isPending) return '/home'; // đã được duyệt mà vào /pending → về home
       if (isAuthRoute) return '/home';
       return null;
     },
@@ -47,6 +59,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (_, __) => const ProviderOnboardingPage()),
       GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterPage()),
+      GoRoute(path: '/driver-registration', builder: (_, __) => const DriverRegistrationPage()),
+      GoRoute(path: '/pending', builder: (_, __) => const PendingApprovalPage()),
       GoRoute(path: '/home', builder: (_, __) => const ProviderShellPage()),
       GoRoute(path: '/documents', builder: (_, __) => const DocumentsPage()),
       GoRoute(path: '/orders', builder: (_, __) => const OrdersInboxPage()),

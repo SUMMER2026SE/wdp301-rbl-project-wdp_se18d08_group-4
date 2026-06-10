@@ -13,17 +13,30 @@ class AuthTokenStorage {
   static const mockToken = 'mock_provider_session';
 
   String? _cachedToken;
+  String? _cachedStatus;
 
   String? get cachedToken => _cachedToken;
+  String? get cachedStatus => _cachedStatus;
 
   void setCachedToken(String? token) => _cachedToken = token;
 
   Future<void> save({required String accessToken, required Map<String, dynamic> user}) async {
     _cachedToken = accessToken;
+    _cachedStatus = user['status'] as String?;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, accessToken);
     await prefs.setString(_userKey, jsonEncode(user));
   }
+
+  Future<String?> loadStatus() async {
+    if (_cachedStatus != null) return _cachedStatus;
+    final user = await loadUser();
+    _cachedStatus = user?['status'] as String?;
+    return _cachedStatus;
+  }
+
+  void clearCachedStatus() => _cachedStatus = null;
+  void updateCachedStatus(String? status) => _cachedStatus = status;
 
   Future<String?> loadToken() async {
     if (_cachedToken != null && _cachedToken!.isNotEmpty) return _cachedToken;
@@ -51,6 +64,7 @@ class AuthTokenStorage {
 
   Future<void> clear() async {
     _cachedToken = null;
+    _cachedStatus = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_userKey);

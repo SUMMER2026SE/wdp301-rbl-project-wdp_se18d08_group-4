@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../core/constants/danang_wards.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/uni_move_colors.dart';
@@ -21,9 +22,13 @@ class RegisterPage extends ConsumerStatefulWidget {
 class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _nameCtrl = TextEditingController();
   final _businessCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+
+  String? _selectedWard;
+  final _streetCtrl = TextEditingController();
 
   bool _agreed = false;
   bool _obscurePass = true;
@@ -44,7 +49,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     _passwordCtrl.removeListener(_onPasswordChanged);
     _nameCtrl.dispose();
     _businessCtrl.dispose();
+    _phoneCtrl.dispose();
     _emailCtrl.dispose();
+    _streetCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
@@ -70,6 +77,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
     if (name.isEmpty) {
       setState(() => _error = 'Vui lòng nhập họ và tên.');
+      return;
+    }
+    if (_phoneCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Vui lòng nhập số điện thoại.');
+      return;
+    }
+    if (_selectedWard == null) {
+      setState(() => _error = 'Vui lòng chọn phường / khu vực.');
       return;
     }
     if (!email.contains('@') || !email.contains('.')) {
@@ -100,16 +115,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             password: password,
             fullName: name,
             businessName: _businessCtrl.text.trim(),
+            phone: _phoneCtrl.text.trim(),
+            ward: _selectedWard!,
+            address: _streetCtrl.text.trim(),
           );
-      if (!shadContext.mounted) return;
-
-      ShadToaster.of(shadContext).show(
-        const ShadToast(
-          title: Text('Đăng ký thành công!'),
-          description: Text('Chờ admin duyệt hồ sơ đối tác.'),
-        ),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 400));
       if (!mounted) return;
       context.go('/driver-registration');
     } on AuthException catch (e) {
@@ -163,6 +172,115 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       onChanged: onChanged,
       onSubmitted: (_) => FocusScope.of(shadContext).nextFocus(),
     );
+  }
+
+  Widget _buildWardSelector(BuildContext shadContext, ShadThemeData theme, UniMoveColors c) {
+    return GestureDetector(
+      onTap: () => _showWardPicker(shadContext, c, theme),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _selectedWard == null ? c.border : c.primary,
+            width: _selectedWard == null ? 1 : 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(LucideIcons.mapPin, size: 18, color: _selectedWard != null ? c.primary : c.onSurfaceMuted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _selectedWard != null ? 'Phường $_selectedWard, Đà Nẵng' : 'Chọn phường / khu vực',
+                style: theme.textTheme.p.copyWith(
+                  color: _selectedWard != null ? c.onSurface : c.onSurfaceMuted,
+                ),
+              ),
+            ),
+            Icon(LucideIcons.chevronDown, size: 16, color: c.onSurfaceMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showWardPicker(BuildContext ctx, UniMoveColors c, ShadThemeData theme) async {
+    final selected = await showModalBottomSheet<String>(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (bCtx) {
+        return Container(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(bCtx).size.height * 0.6),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Chọn phường / khu vực',
+                  style: theme.textTheme.h4.copyWith(fontWeight: FontWeight.w700, color: c.onSurface),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Đà Nẵng',
+                  style: theme.textTheme.small.copyWith(color: c.onSurfaceMuted),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Divider(color: c.border, height: 1),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: kDanangWards.length,
+                  itemBuilder: (_, i) {
+                    final ward = kDanangWards[i];
+                    final isSelected = ward == _selectedWard;
+                    return ListTile(
+                      leading: Icon(
+                        LucideIcons.mapPin,
+                        size: 18,
+                        color: isSelected ? c.primary : c.onSurfaceMuted,
+                      ),
+                      title: Text(
+                        'Phường $ward',
+                        style: theme.textTheme.p.copyWith(
+                          color: isSelected ? c.primary : c.onSurface,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+                        ),
+                      ),
+                      trailing: isSelected ? Icon(LucideIcons.circleCheck, color: c.primary, size: 20) : null,
+                      onTap: () => Navigator.pop(bCtx, ward),
+                    );
+                  },
+                ),
+              ),
+              SizedBox(height: MediaQuery.of(bCtx).padding.bottom + 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (selected != null) setState(() => _selectedWard = selected);
   }
 
   @override
@@ -323,6 +441,55 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                       Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
+                                          _fieldLabel(theme, 'Số điện thoại'),
+                                          const SizedBox(height: 8),
+                                          _buildInput(
+                                            shadContext: shadContext,
+                                            controller: _phoneCtrl,
+                                            placeholder: '0901 234 567',
+                                            leadingIcon: LucideIcons.phone,
+                                            keyboardType: TextInputType.phone,
+                                            textInputAction: TextInputAction.next,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _stagger(
+                                      6,
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          _fieldLabel(theme, 'Phường / Khu vực'),
+                                          const SizedBox(height: 8),
+                                          _buildWardSelector(shadContext, theme, c),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _stagger(
+                                      7,
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          _fieldLabel(theme, 'Số nhà, tên đường'),
+                                          const SizedBox(height: 8),
+                                          _buildInput(
+                                            shadContext: shadContext,
+                                            controller: _streetCtrl,
+                                            placeholder: 'VD: 322 Nguyễn Duy Trinh',
+                                            leadingIcon: LucideIcons.mapPin,
+                                            textInputAction: TextInputAction.next,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _stagger(
+                                      8,
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
                                           _fieldLabel(theme, 'Email'),
                                           const SizedBox(height: 8),
                                           _buildInput(
@@ -338,7 +505,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                     ),
                                     const SizedBox(height: 16),
                                     _stagger(
-                                      6,
+                                      9,
                                       Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
@@ -386,7 +553,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                     ),
                                     const SizedBox(height: 16),
                                     _stagger(
-                                      7,
+                                      10,
                                       Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
@@ -423,7 +590,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                     ],
                                     const SizedBox(height: 18),
                                     _stagger(
-                                      8,
+                                      11,
                                       Row(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [

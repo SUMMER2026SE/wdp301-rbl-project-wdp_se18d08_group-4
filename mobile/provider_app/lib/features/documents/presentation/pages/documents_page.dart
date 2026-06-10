@@ -407,6 +407,97 @@ class _DocumentTile extends StatelessWidget {
   final ProviderDocumentRecord record;
   final VoidCallback onAction;
 
+  bool get _hasImage =>
+      record.previewLabel != null && record.previewLabel!.startsWith('http');
+
+  void _showImageDetail(BuildContext context) {
+    final c = UniMoveColors.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      record.type.label,
+                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: c.onSurface,
+                          ),
+                    ),
+                  ),
+                  ShadIconButton.ghost(
+                    icon: Icon(LucideIcons.x, color: c.onSurfaceMuted),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4.0,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      record.previewLabel!,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (_, child, progress) => progress == null
+                          ? child
+                          : Center(
+                              child: CircularProgressIndicator(
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                    : null,
+                                color: c.primary,
+                              ),
+                            ),
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 200,
+                        alignment: Alignment.center,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.imageOff, size: 40, color: c.onSurfaceMuted),
+                            const SizedBox(height: 8),
+                            Text('Không tải được ảnh', style: TextStyle(color: c.onSurfaceMuted)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: MediaQuery.of(ctx).padding.bottom + 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   IconData get _icon => switch (record.type) {
         ProviderDocumentType.idCardFront || ProviderDocumentType.idCardBack => LucideIcons.idCard,
         ProviderDocumentType.license => LucideIcons.car,
@@ -527,13 +618,31 @@ class _DocumentTile extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: ShadButton.outline(
-                    size: ShadButtonSize.sm,
-                    onPressed: canTap ? onAction : null,
-                    child: Text(actionLabel),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (_hasImage)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ShadButton.outline(
+                          size: ShadButtonSize.sm,
+                          onPressed: () => _showImageDetail(context),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(LucideIcons.eye, size: 14),
+                              SizedBox(width: 4),
+                              Text('Chi tiết'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ShadButton.outline(
+                      size: ShadButtonSize.sm,
+                      onPressed: canTap ? onAction : null,
+                      child: Text(actionLabel),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -71,7 +71,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                 slivers: [
                   SliverAppBar(
                     pinned: true,
-                    expandedHeight: 168,
+                    expandedHeight: 210,
                     backgroundColor: c.primary,
                     foregroundColor: Colors.white,
                     iconTheme: const IconThemeData(color: Colors.white),

@@ -1,16 +1,8 @@
 const { supabaseAdmin } = require('./supabase.service');
+const { uploadBuffer } = require('./cloudinary.service');
 const { httpError } = require('./auth.helpers');
-const { ensurePublicImageBucket } = require('./storage.helpers');
 
-const PROVIDER_DOCS_BUCKET = 'provider-documents';
-const EXT_BY_MIME = { 'image/jpeg': 'jpg', 'image/png': 'png' };
-const FIELD_TO_DOC_TYPE = {
-  cccd_front: 'id_card',
-  cccd_back: 'id_card',
-  vehicle_registration: 'vehicle_registration',
-  driver_license: 'license',
-  vehicle_photo: 'insurance',
-};
+const VALID_DOC_TYPES = ['cccd_front', 'cccd_back', 'license_front', 'license_back', 'vehicle_registration', 'vehicle_photo'];
 
 const PROVIDER_SELECT = `
   id,
@@ -27,6 +19,8 @@ const PROVIDER_SELECT = `
   service_area,
   profiles!provider_profiles_id_fkey(full_name, avatar_url, phone)
 `;
+
+// ── Browse (customer-facing) ──────────────────────────────────────────────────
 
 async function browseProviders({ city, minRating, limit = 20 }) {
   let query = supabaseAdmin
@@ -120,7 +114,6 @@ async function loadProviderRow(providerId) {
   return loadProviderFromProfilesOnly(providerId);
 }
 
-/** Gộp profiles (metadata) + provider_profiles (nhà xe) — tránh SELECT cột không có trên profiles. */
 async function loadProviderFromProfilesOnly(providerId) {
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('profiles')
@@ -129,9 +122,7 @@ async function loadProviderFromProfilesOnly(providerId) {
     .eq('role', 'provider')
     .maybeSingle();
 
-  if (profileError) {
-    throw httpError(500, profileError.message, 'db_error');
-  }
+  if (profileError) throw httpError(500, profileError.message, 'db_error');
   if (!profile) return null;
 
   const { data: pp, error: ppError } = await supabaseAdmin
@@ -142,9 +133,7 @@ async function loadProviderFromProfilesOnly(providerId) {
     .eq('id', providerId)
     .maybeSingle();
 
-  if (ppError && ppError.code !== '42P01') {
-    throw httpError(500, ppError.message, 'db_error');
-  }
+  if (ppError && ppError.code !== '42P01') throw httpError(500, ppError.message, 'db_error');
 
   if (!pp) {
     return {
@@ -160,35 +149,20 @@ async function loadProviderFromProfilesOnly(providerId) {
       is_verified: false,
       is_available: false,
       service_area: [],
-      profiles: {
-        full_name: profile.full_name,
-        avatar_url: profile.avatar_url,
-        phone: profile.phone,
-      },
+      profiles: { full_name: profile.full_name, avatar_url: profile.avatar_url, phone: profile.phone },
     };
   }
 
-  return {
-    ...pp,
-    profiles: {
-      full_name: profile.full_name,
-      avatar_url: profile.avatar_url,
-      phone: profile.phone,
-    },
-  };
+  return { ...pp, profiles: { full_name: profile.full_name, avatar_url: profile.avatar_url, phone: profile.phone } };
 }
 
 /** BE-020 — GET /api/providers/:id */
 async function getProviderById(providerId, { reviewsLimit = 5 } = {}) {
   const id = String(providerId || '').trim();
-  if (!id) {
-    throw httpError(400, 'Thiếu id nhà xe', 'validation_error');
-  }
+  if (!id) throw httpError(400, 'Thiếu id nhà xe', 'validation_error');
 
   const providerRow = await loadProviderRow(id);
-  if (!providerRow) {
-    throw httpError(404, 'Không tìm thấy nhà xe', 'not_found');
-  }
+  if (!providerRow) throw httpError(404, 'Không tìm thấy nhà xe', 'not_found');
 
   const limit = Math.min(Math.max(parseInt(String(reviewsLimit), 10) || 5, 1), 20);
 
@@ -203,9 +177,7 @@ async function getProviderById(providerId, { reviewsLimit = 5 } = {}) {
       .order('sort_order', { ascending: true }),
     supabaseAdmin
       .from('reviews')
-      .select(
-        'id, order_id, rating, title, comment, tags, created_at, customer:profiles!customer_id(full_name)',
-      )
+      .select('id, order_id, rating, title, comment, tags, created_at, customer:profiles!customer_id(full_name)')
       .eq('provider_id', id)
       .eq('is_published', true)
       .eq('is_hidden', false)
@@ -214,15 +186,9 @@ async function getProviderById(providerId, { reviewsLimit = 5 } = {}) {
     supabaseAdmin.from('provider_reviews_summary').select('*').eq('provider_id', id).maybeSingle(),
   ]);
 
-  if (packagesResult.error) {
-    throw httpError(500, packagesResult.error.message, 'db_error');
-  }
-  if (reviewsResult.error) {
-    throw httpError(500, reviewsResult.error.message, 'db_error');
-  }
-  if (summaryResult.error) {
-    throw httpError(500, summaryResult.error.message, 'db_error');
-  }
+  if (packagesResult.error) throw httpError(500, packagesResult.error.message, 'db_error');
+  if (reviewsResult.error) throw httpError(500, reviewsResult.error.message, 'db_error');
+  if (summaryResult.error) throw httpError(500, summaryResult.error.message, 'db_error');
 
   const base = mapProviderRow(providerRow);
 
@@ -249,60 +215,150 @@ async function getProviderById(providerId, { reviewsLimit = 5 } = {}) {
   };
 }
 
-async function uploadProviderDocuments(providerId, filesMap) {
-  if (!filesMap || !Object.keys(filesMap).length) {
-    throw httpError(400, 'Không có file được upload', 'validation_error');
-  }
+// ── Provider self-service ─────────────────────────────────────────────────────
 
-  await ensurePublicImageBucket(PROVIDER_DOCS_BUCKET, {
-    fileSizeLimit: 5242880,
-    allowedMimeTypes: ['image/jpeg', 'image/png'],
-  });
-
-  const uploaded = [];
-
-  for (const [field, files] of Object.entries(filesMap)) {
-    const file = Array.isArray(files) ? files[0] : files;
-    if (!file?.buffer?.length) continue;
-
-    const ext = EXT_BY_MIME[file.mimetype];
-    if (!ext) throw httpError(400, 'Chỉ chấp nhận ảnh JPG hoặc PNG', 'invalid_file_type');
-
-    const objectPath = `${providerId}/${field}-${Date.now()}.${ext}`;
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from(PROVIDER_DOCS_BUCKET)
-      .upload(objectPath, file.buffer, { contentType: file.mimetype, upsert: true });
-
-    if (uploadError) throw httpError(500, uploadError.message, 'storage_error');
-
-    const { data: urlData } = supabaseAdmin.storage.from(PROVIDER_DOCS_BUCKET).getPublicUrl(objectPath);
-    const url = urlData?.publicUrl;
-    if (!url) throw httpError(500, 'Không tạo được URL ảnh', 'storage_error');
-
-    const docType = FIELD_TO_DOC_TYPE[field] || field;
-    const { error: dbError } = await supabaseAdmin.from('provider_documents').insert({
-      provider_id: providerId,
-      document_type: `${docType}_${field}`,
-      document_url: url,
-      is_verified: false,
-      notes: field,
-    });
-
-    if (dbError) throw httpError(500, dbError.message, 'db_error');
-
-    uploaded.push({ field, url, document_type: docType });
-  }
-
-  if (!uploaded.length) {
-    throw httpError(400, 'Không có file hợp lệ', 'validation_error');
-  }
-
-  await supabaseAdmin
+async function getMyProfile(providerId) {
+  const { data: profile, error: pErr } = await supabaseAdmin
     .from('profiles')
-    .update({ status: 'pending_verification' })
-    .eq('id', providerId);
+    .select('id, email, full_name, phone, avatar_url, role, created_at')
+    .eq('id', providerId)
+    .single();
 
-  return { uploaded: uploaded.length, documents: uploaded };
+  if (pErr) throw Object.assign(new Error(pErr.message), { status: 404 });
+
+  const { data: pp } = await supabaseAdmin
+    .from('provider_profiles')
+    .select('business_name, vehicle_type, base_price, price_per_km, service_area, rating, total_reviews, is_verified, is_available, total_orders, completed_orders')
+    .eq('id', providerId)
+    .maybeSingle();
+
+  return {
+    id: profile.id,
+    email: profile.email,
+    full_name: profile.full_name,
+    phone: profile.phone,
+    avatar_url: profile.avatar_url,
+    role: profile.role,
+    business_name: pp?.business_name ?? null,
+    vehicle_type: pp?.vehicle_type ?? null,
+    base_price: pp?.base_price ?? null,
+    price_per_km: pp?.price_per_km ?? null,
+    service_area: pp?.service_area ?? [],
+    rating: pp?.rating ?? 0,
+    total_reviews: pp?.total_reviews ?? 0,
+    is_verified: pp?.is_verified ?? false,
+    is_available: pp?.is_available ?? false,
+    total_orders: pp?.total_orders ?? 0,
+    completed_orders: pp?.completed_orders ?? 0,
+  };
 }
 
-module.exports = { browseProviders, getProviderById, uploadProviderDocuments };
+async function updateMyProfile(providerId, payload) {
+  const profileFields = {};
+  if (payload.full_name !== undefined) profileFields.full_name = payload.full_name;
+  if (payload.phone !== undefined) profileFields.phone = payload.phone;
+
+  if (Object.keys(profileFields).length > 0) {
+    const { error } = await supabaseAdmin.from('profiles').update(profileFields).eq('id', providerId);
+    if (error) throw Object.assign(new Error(error.message), { status: 400 });
+  }
+
+  const ppFields = { id: providerId };
+  if (payload.business_name !== undefined) ppFields.business_name = payload.business_name;
+  if (payload.vehicle_type !== undefined) ppFields.vehicle_type = payload.vehicle_type;
+  if (payload.base_price !== undefined) ppFields.base_price = payload.base_price;
+  if (payload.price_per_km !== undefined) ppFields.price_per_km = payload.price_per_km;
+  if (payload.service_area !== undefined) ppFields.service_area = payload.service_area;
+
+  if (Object.keys(ppFields).length > 1) {
+    let dbError;
+    if (ppFields.business_name !== undefined) {
+      ({ error: dbError } = await supabaseAdmin
+        .from('provider_profiles')
+        .upsert(ppFields, { onConflict: 'id' }));
+    } else {
+      const { id, ...updateFields } = ppFields;
+      ({ error: dbError } = await supabaseAdmin
+        .from('provider_profiles')
+        .update(updateFields)
+        .eq('id', providerId));
+    }
+    if (dbError) throw Object.assign(new Error(dbError.message), { status: 400 });
+  }
+
+  return getMyProfile(providerId);
+}
+
+async function setOnlineStatus(providerId, isAvailable) {
+  const { error } = await supabaseAdmin
+    .from('provider_profiles')
+    .upsert({ id: providerId, is_available: isAvailable }, { onConflict: 'id' });
+
+  if (error) throw Object.assign(new Error(error.message), { status: 400 });
+  return { is_available: isAvailable };
+}
+
+// ── Documents ─────────────────────────────────────────────────────────────────
+
+async function uploadDocument(providerId, docType, fileBuffer) {
+  if (!VALID_DOC_TYPES.includes(docType)) {
+    throw Object.assign(new Error('doc_type không hợp lệ'), { status: 400 });
+  }
+
+  console.log(`[uploadDocument] provider=${providerId} docType=${docType} bufferSize=${fileBuffer?.length}`);
+
+  let url, publicId;
+  try {
+    ({ url, publicId } = await uploadBuffer(fileBuffer, {
+      folder: `unimove/provider_documents/${providerId}`,
+      public_id: docType,
+      overwrite: true,
+    }));
+    console.log(`[uploadDocument] Cloudinary OK → ${url}`);
+  } catch (cloudErr) {
+    console.error(`[uploadDocument] Cloudinary FAILED:`, cloudErr.message);
+    throw Object.assign(new Error(`Cloudinary upload failed: ${cloudErr.message}`), { status: 502 });
+  }
+
+  const { error } = await supabaseAdmin
+    .from('provider_documents')
+    .upsert(
+      {
+        provider_id: providerId,
+        document_type: docType,
+        document_url: url,
+        cloudinary_public_id: publicId,
+        status: 'pending',
+      },
+      { onConflict: 'provider_id,document_type' },
+    );
+
+  if (error) {
+    console.error(`[uploadDocument] DB upsert FAILED:`, error.message);
+    throw Object.assign(new Error(error.message), { status: 400 });
+  }
+
+  console.log(`[uploadDocument] DB saved OK → ${docType}`);
+  return { doc_type: docType, url, status: 'pending' };
+}
+
+async function getDocuments(providerId) {
+  const { data, error } = await supabaseAdmin
+    .from('provider_documents')
+    .select('document_type, document_url, cloudinary_public_id, status, created_at')
+    .eq('provider_id', providerId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw Object.assign(new Error(error.message), { status: 400 });
+  return data ?? [];
+}
+
+module.exports = {
+  browseProviders,
+  getProviderById,
+  getMyProfile,
+  updateMyProfile,
+  setOnlineStatus,
+  uploadDocument,
+  getDocuments,
+};
