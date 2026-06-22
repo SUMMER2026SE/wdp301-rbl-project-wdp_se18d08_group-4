@@ -716,6 +716,148 @@ async function ensureWallet(userId) {
   return created;
 }
 
+/** Đồng bộ order + dispute sau khi duyệt hoàn tiền (Task #8). */
+async function syncStatusAfterRefundApproval({
+  orderId,
+  refundAmount,
+  paymentStatus,
+  processedByUserId,
+  refundReason,
+}) {
+  const { data: order } = await supabaseAdmin
+    .from('orders')
+    .select('id, status, customer_id')
+    .eq('id', orderId)
+    .single();
+
+  if (!order) {
+    return { order_updated: false, disputes_resolved: 0, order_status: null };
+  }
+
+  let orderUpdated = false;
+  const previousStatus = order.status;
+
+  if (!['cancelled', 'completed'].includes(order.status)) {
+    const { error: orderError } = await supabaseAdmin
+      .from('orders')
+      .update({
+        status: 'cancelled',
+        cancellation_reason: refundReason || 'Hoàn tiền đã được duyệt',
+        cancelled_by: processedByUserId || order.customer_id,
+        cancelled_at: new Date().toISOString(),
+        slot_locked_until: null,
+      })
+      .eq('id', orderId);
+
+    if (!orderError) {
+      orderUpdated = true;
+      await supabaseAdmin.from('order_status_history').insert({
+        order_id: orderId,
+        from_status: previousStatus,
+        to_status: 'cancelled',
+        changed_by: processedByUserId || order.customer_id,
+        notes: 'Đồng bộ sau khi duyệt hoàn tiền',
+      });
+    }
+  }
+
+  const resolutionType = paymentStatus === 'partially_refunded' ? 'partial_refund' : 'refund';
+  const { data: openDisputes } = await supabaseAdmin
+    .from('disputes')
+    .select('id')
+    .eq('order_id', orderId)
+    .in('status', ['open', 'investigating']);
+
+  let disputesResolved = 0;
+  for (const dispute of openDisputes || []) {
+    const { error: disputeError } = await supabaseAdmin
+      .from('disputes')
+      .update({
+        status: 'resolved',
+        resolution: refundReason || 'Hoàn tiền đã được duyệt',
+        resolution_type: resolutionType,
+        refund_amount: refundAmount,
+        resolved_by: processedByUserId,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq('id', dispute.id);
+
+    if (!disputeError) disputesResolved += 1;
+  }
+
+  return {
+    order_updated: orderUpdated,
+    disputes_resolved: disputesResolved,
+    order_status: 'cancelled',
+  };
+}
+
+/**
+ * Admin: tạo refund pending rồi duyệt ngay (dùng khi giải quyết khiếu nại có hoàn tiền).
+ */
+async function adminCreateAndCompleteRefund({
+  orderId,
+  requestedBy,
+  refundAmount,
+  reason,
+  processedByUserId,
+}) {
+  const amount = Math.round(Number(refundAmount));
+  if (amount <= 0) {
+    throw httpError(400, 'Số tiền hoàn phải lớn hơn 0', 'invalid_refund_amount');
+  }
+
+  const { data: payment, error: paymentError } = await supabaseAdmin
+    .from('payments')
+    .select('id, amount, status, customer_id')
+    .eq('order_id', orderId)
+    .in('status', ['completed', 'partially_refunded'])
+    .in('payment_purpose', ['deposit', 'full', 'final'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (paymentError) throw httpError(500, paymentError.message, 'db_error');
+  if (!payment) {
+    throw httpError(400, 'Không tìm thấy khoản thanh toán để hoàn tiền', 'no_refundable_payment');
+  }
+  if (payment.status === 'refunded') {
+    throw httpError(400, 'Khoản thanh toán đã được hoàn trước đó', 'already_refunded');
+  }
+
+  const requesterId = requestedBy || payment.customer_id;
+
+  const { data: existingRefund, error: existingError } = await supabaseAdmin
+    .from('refunds')
+    .select('id, status')
+    .eq('payment_id', payment.id)
+    .in('status', ['pending', 'processing', 'completed'])
+    .maybeSingle();
+
+  if (existingError) throw httpError(500, existingError.message, 'db_error');
+  if (existingRefund) {
+    return completeRefund(existingRefund.id, processedByUserId);
+  }
+
+  const cappedAmount = Math.min(amount, Number(payment.amount));
+
+  const { data: refund, error: insertError } = await supabaseAdmin
+    .from('refunds')
+    .insert({
+      payment_id: payment.id,
+      order_id: orderId,
+      refund_amount: cappedAmount,
+      refund_reason: String(reason || '').trim() || 'Hoàn tiền theo quyết định admin',
+      status: 'pending',
+      requested_by: requesterId,
+    })
+    .select()
+    .single();
+
+  if (insertError) throw httpError(500, insertError.message, 'db_error');
+  return completeRefund(refund.id, processedByUserId);
+}
+
 async function completeRefund(refundId, processedByUserId) {
   const { data: refund, error: fetchError } = await supabaseAdmin
     .from('refunds')
@@ -802,11 +944,20 @@ async function completeRefund(refundId, processedByUserId) {
 
   if (refundUpdateError) throw httpError(500, refundUpdateError.message, 'db_error');
 
+  const syncResult = await syncStatusAfterRefundApproval({
+    orderId: refund.order_id,
+    refundAmount,
+    paymentStatus: newPaymentStatus,
+    processedByUserId,
+    refundReason: refund.refund_reason,
+  });
+
+  const formattedAmount = refundAmount.toLocaleString('vi-VN');
   await createNotification(
     customerId,
     'payment_received',
-    'Hoàn tiền thành công',
-    `Đã hoàn ${refundAmount.toLocaleString('vi-VN')}đ vào ví UniMove của bạn.`,
+    'Hoàn tiền đã được duyệt',
+    `Hoàn tiền ${formattedAmount}đ đã được duyệt`,
     { priority: 'high', actionData: { order_id: refund.order_id, refund_id: refundId } },
   );
 
@@ -815,7 +966,10 @@ async function completeRefund(refundId, processedByUserId) {
     refund_amount: refundAmount,
     wallet_balance: balanceAfter,
     payment_status: newPaymentStatus,
-    message: 'Hoàn tiền vào ví thành công',
+    order_status: syncResult.order_status,
+    order_updated: syncResult.order_updated,
+    disputes_resolved: syncResult.disputes_resolved,
+    message: `Hoàn tiền ${formattedAmount}đ đã được duyệt`,
     already_processed: false,
   };
 }
@@ -1297,6 +1451,7 @@ module.exports = {
   createRefund,
   requestRefundForOrder,
   completeRefund,
+  adminCreateAndCompleteRefund,
   syncPaymentStatus,
   syncPaymentByCode,
   syncPaymentRecord,

@@ -46,38 +46,51 @@ type RefundRow = {
 
 function ApproveRefundDialog({
   refundId,
+  refundAmount,
   open,
   onClose,
   onApproved,
 }: {
   refundId: string | null;
+  refundAmount?: number;
   open: boolean;
   onClose: () => void;
   onApproved: () => void;
 }) {
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const handleApprove = () => {
     if (!refundId) return;
+    setError(null);
     startTransition(async () => {
       const adminId = getAdminUserId();
-      const { error } = await approveRefund(refundId, adminId);
-      if (!error) {
+      const { error: approveError } = await approveRefund(refundId, adminId);
+      if (!approveError) {
         onApproved();
         onClose();
+        return;
       }
+      setError(approveError.message || "Không duyệt được hoàn tiền");
     });
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { setError(null); onClose(); } }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Xác nhận duyệt hoàn tiền</DialogTitle>
         </DialogHeader>
         <p className="text-sm" style={{ color: "var(--muted)" }}>
-          Bạn có chắc chắn muốn duyệt yêu cầu hoàn tiền này không? Hành động này không thể hoàn tác.
+          {refundAmount != null
+            ? `Duyệt hoàn ${formatVND(refundAmount)}? Hệ thống sẽ cập nhật payment, order và gửi thông báo cho khách.`
+            : "Bạn có chắc chắn muốn duyệt yêu cầu hoàn tiền này không? Hành động này không thể hoàn tác."}
         </p>
+        {error && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        )}
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="outline" size="sm">Hủy</Button>
@@ -98,6 +111,7 @@ export default function RefundsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [approveId, setApproveId] = useState<string | null>(null);
+  const [approveAmount, setApproveAmount] = useState<number | undefined>(undefined);
   const [approveOpen, setApproveOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -222,7 +236,11 @@ export default function RefundsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => { setApproveId(r.id); setApproveOpen(true); }}
+                            onClick={() => {
+                              setApproveId(r.id);
+                              setApproveAmount(r.refund_amount);
+                              setApproveOpen(true);
+                            }}
                           >
                             Duyệt hoàn tiền
                           </Button>
@@ -246,6 +264,7 @@ export default function RefundsPage() {
 
       <ApproveRefundDialog
         refundId={approveId}
+        refundAmount={approveAmount}
         open={approveOpen}
         onClose={() => setApproveOpen(false)}
         onApproved={load}

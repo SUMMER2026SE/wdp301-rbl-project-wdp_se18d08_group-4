@@ -572,6 +572,20 @@ async function resolveDispute(req, res) {
       });
     }
 
+    const { data: existingDispute, error: fetchError } = await supabaseAdmin
+      .from('disputes')
+      .select('id, order_id, raised_by, status')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!existingDispute) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy khiếu nại',
+      });
+    }
+
     const { data: updatedDispute, error } = await supabaseAdmin
       .from('disputes')
       .update({
@@ -595,13 +609,6 @@ async function resolveDispute(req, res) {
       throw error;
     }
 
-    if (!updatedDispute) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy khiếu nại',
-      });
-    }
-
     if (internal_notes) {
       await supabaseAdmin.from('dispute_messages').insert({
         dispute_id: id,
@@ -611,37 +618,67 @@ async function resolveDispute(req, res) {
       });
     }
 
-    await supabaseAdmin.from('notifications').insert({
-      user_id: updatedDispute.raised_by,
-      notification_type: 'dispute_resolved',
-      title: 'Khiếu nại đã được xử lý',
-      body: `Khiếu nại cho đơn hàng ${updatedDispute.orders.order_number} đã được xử lý. ${resolution}`,
-      priority: 'high',
-    });
+    const { createNotification } = require('../services/notification.service');
+    await createNotification(
+      updatedDispute.raised_by,
+      'dispute_resolved',
+      'Khiếu nại đã được xử lý',
+      `Khiếu nại cho đơn hàng ${updatedDispute.orders.order_number} đã được xử lý. ${resolution}`,
+      { priority: 'high', actionData: { order_id: updatedDispute.order_id, dispute_id: id } },
+    );
 
-    if (refund_amount && refund_amount > 0) {
-      await supabaseAdmin.from('refunds').insert({
-        order_id: updatedDispute.order_id,
-        refund_amount,
-        refund_reason: `Dispute resolution: ${resolution}`,
-        status: 'approved',
-        requested_by: updatedDispute.raised_by,
-        approved_by: req.user.id,
-        processed_at: new Date().toISOString(),
+    let refundResult = null;
+    const shouldRefund =
+      refund_amount && Number(refund_amount) > 0
+      && (resolution_type === 'refund' || resolution_type === 'partial_refund');
+
+    if (shouldRefund) {
+      const paymentsService = require('../services/payments.service');
+      refundResult = await paymentsService.adminCreateAndCompleteRefund({
+        orderId: updatedDispute.order_id,
+        requestedBy: updatedDispute.raised_by,
+        refundAmount: refund_amount,
+        reason: `Giải quyết khiếu nại: ${resolution}`,
+        processedByUserId: req.user.id,
       });
+    } else {
+      const { data: order } = await supabaseAdmin
+        .from('orders')
+        .select('id, status, customer_id')
+        .eq('id', updatedDispute.order_id)
+        .single();
+
+      if (order && order.status === 'disputed') {
+        await supabaseAdmin
+          .from('orders')
+          .update({
+            status: 'cancelled',
+            cancellation_reason: resolution,
+            cancelled_by: req.user.id,
+            cancelled_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+      }
     }
 
     res.json({
       success: true,
-      message: 'Xử lý khiếu nại thành công',
-      data: updatedDispute,
+      message: shouldRefund
+        ? refundResult?.message || 'Xử lý khiếu nại và hoàn tiền thành công'
+        : 'Xử lý khiếu nại thành công',
+      data: {
+        dispute: updatedDispute,
+        refund: refundResult?.refund ?? null,
+        payment_status: refundResult?.payment_status ?? null,
+        order_status: refundResult?.order_status ?? null,
+      },
     });
   } catch (error) {
     console.error('Resolve dispute error:', error);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       success: false,
-      message: 'Lỗi server khi xử lý khiếu nại',
-      error: error.message,
+      message: error.message || 'Lỗi server khi xử lý khiếu nại',
+      ...(error.code ? { code: error.code } : {}),
     });
   }
 }
