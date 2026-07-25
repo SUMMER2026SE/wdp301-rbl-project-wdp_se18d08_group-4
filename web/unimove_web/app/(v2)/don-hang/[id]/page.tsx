@@ -407,8 +407,8 @@ export default function DonHangDetailPage() {
     if (shouldLoadQuotes) {
       try {
         const q = await quotesApi.list(id);
-        const qd = q.data as { quotes?: Quote[] };
-        const list = qd?.quotes ?? (Array.isArray(q.data) ? (q.data as Quote[]) : []);
+        const qd = q as { data?: Quote[] | { quotes?: Quote[] }; order?: unknown };
+        const list = Array.isArray(qd.data) ? qd.data : qd.data?.quotes ?? [];
         if (list.length > 0) setQuotes(list);
       } catch {
         /* không có báo giá */

@@ -1,7 +1,10 @@
 const env = require('../config/env');
 const { httpError } = require('./auth.helpers');
 
-const NOMINATIM_HEADERS = { 'User-Agent': 'UniMove/1.0 (booking-autocomplete)' };
+const NOMINATIM_HEADERS = {
+  'User-Agent': 'UniMove/1.0 (booking-autocomplete)',
+  From: 'no-reply@unimove.com',
+};
 
 function parseCoord(value) {
   const n = Number(value);

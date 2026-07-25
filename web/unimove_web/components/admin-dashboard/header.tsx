@@ -359,7 +359,7 @@ export default function Header() {
   const { toggleCollapsed, setMobileOpen } = useSidebarStore();
 
   const API_URL =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
 
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);

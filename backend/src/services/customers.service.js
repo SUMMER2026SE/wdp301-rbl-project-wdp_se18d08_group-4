@@ -363,6 +363,25 @@ async function getComboFlowHint() {
   return DEFAULT_COMBO_HINT;
 }
 
+async function getQuoteFlowHint() {
+  const { data, error } = await supabaseAdmin
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'quote_flow_hint')
+    .maybeSingle();
+
+  if (error) {
+    throw httpError(500, error.message, 'db_error');
+  }
+
+  const value = data?.value;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value && typeof value === 'object' && typeof value.text === 'string') {
+    return value.text.trim();
+  }
+  return DEFAULT_QUOTE_FLOW;
+}
+
 /** BE-017 — GET /api/customers/me/recent-places */
 async function getRecentPlaces(userId, limitParam) {
   const limit = Math.min(Math.max(parseInt(String(limitParam || 5), 10) || 5, 1), 20);
