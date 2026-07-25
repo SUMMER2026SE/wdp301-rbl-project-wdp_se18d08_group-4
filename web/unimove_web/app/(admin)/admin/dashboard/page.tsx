@@ -45,29 +45,29 @@ export default async function DashboardPage() {
           title="Doanh thu hôm qua"
           value={formatVND(stats?.gmv_yesterday ?? 0)}
           icon={DollarSign}
-          iconBg="var(--primary-tint)"
-          iconColor="var(--primary)"
+          iconBg="rgba(79, 70, 229, 0.10)"
+          iconColor="#4F46E5"
         />
         <StatCard
           title="Đơn hàng hôm qua"
           value={(stats?.orders_yesterday ?? 0).toLocaleString("vi-VN")}
           icon={Package}
-          iconBg="#FEF3C7"
+          iconBg="rgba(245, 158, 11, 0.10)"
           iconColor="#D97706"
         />
         <StatCard
           title="Người dùng đang hoạt động"
           value={(stats?.active_users ?? 0).toLocaleString("vi-VN")}
           icon={Users}
-          iconBg="#DCFCE7"
-          iconColor="#16A34A"
+          iconBg="rgba(16, 185, 129, 0.10)"
+          iconColor="#059669"
         />
         <Link href="/admin/verifications" className="block">
           <StatCard
             title="Chờ xác minh"
             value={(stats?.pending_verifications ?? 0).toLocaleString("vi-VN")}
             icon={ShieldCheck}
-            iconBg="#FEE2E2"
+            iconBg="rgba(239, 68, 68, 0.10)"
             iconColor="#DC2626"
             className="cursor-pointer"
           />
