@@ -28,6 +28,7 @@ router.post(
   providersController.requestVerification,
 );
 
-router.get('/:id', requireAuth, providersController.getById);
+// Public — no auth required for viewing a provider's public profile
+router.get('/:id', providersController.getById);
 
 module.exports = router;
