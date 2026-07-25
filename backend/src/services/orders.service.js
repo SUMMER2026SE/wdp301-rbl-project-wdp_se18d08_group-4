@@ -482,10 +482,12 @@ async function startOrder(orderId, providerId) {
   if (!order) throw Object.assign(new Error('Không tìm thấy đơn hàng'), { status: 404 });
   if (order.provider_id !== providerId)
     throw Object.assign(new Error('Bạn không phải provider của đơn hàng này'), { status: 403 });
-  if (!['accepted', 'picking_up'].includes(order.status))
+  if (!['scheduled', 'accepted', 'picking_up'].includes(order.status))
     throw Object.assign(new Error('Chỉ có thể bắt đầu đơn đã được nhận'), { status: 409 });
 
-  const nextStatus = order.status === 'accepted' ? 'picking_up' : 'in_progress';
+  const nextStatus = order.status === 'scheduled' ? 'accepted'
+    : order.status === 'accepted' ? 'picking_up'
+    : 'in_progress';
   const extra = nextStatus === 'in_progress' ? { actual_pickup_time: new Date().toISOString() } : {};
 
   const { data, error } = await supabaseAdmin
