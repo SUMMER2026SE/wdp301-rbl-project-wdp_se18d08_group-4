@@ -35,19 +35,22 @@ const TABS = [
 ];
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-  pending:              { label: "Chờ xác nhận",        bg: "#FEF9C3", text: "#A16207", dot: "#EAB308" },
-  matched_no_deposit:   { label: "Khách đã chọn · Chờ đặt cọc", bg: "#FFF7ED", text: "#C2410C", dot: "#F97316" },
-  matched_with_deposit: { label: "Chờ bạn xác nhận",    bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
-  accepted:             { label: "Đã xác nhận",         bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
-  picking_up:           { label: "Đang đến lấy hàng",   bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
-  in_progress:          { label: "Đang vận chuyển",     bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
-  completed:            { label: "Hoàn thành",          bg: "#DCFCE7", text: "#15803D", dot: "#16A34A" },
-  cancelled:            { label: "Đã hủy",              bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
-  disputed:             { label: "Khiếu nại",           bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
+  pending:                  { label: "Chờ xác nhận",               bg: "#FEF9C3", text: "#A16207", dot: "#EAB308" },
+  matched_no_deposit:       { label: "Khách đã chọn · Chờ đặt cọc", bg: "#FFF7ED", text: "#C2410C", dot: "#F97316" },
+  matched_with_deposit:     { label: "Chờ bạn xác nhận",           bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
+  scheduled:                { label: "Đã xếp lịch",                bg: "#F3F4F6", text: "#374151", dot: "#9CA3AF" },
+  scheduled_with_deposit:   { label: "Đã xếp lịch · Đã cọc",       bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
+  accepted:                 { label: "Đã xác nhận",                bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
+  picking_up:               { label: "Đang đến lấy hàng",          bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
+  in_progress:              { label: "Đang vận chuyển",            bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
+  completed:                { label: "Hoàn thành",                 bg: "#DCFCE7", text: "#15803D", dot: "#16A34A" },
+  cancelled:                { label: "Đã hủy",                     bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
+  disputed:                 { label: "Khiếu nại",                  bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
 };
 
 function resolveStatusKey(status: string, depositPaid?: boolean): string {
   if (status === "matched") return depositPaid ? "matched_with_deposit" : "matched_no_deposit";
+  if (status === "scheduled") return depositPaid ? "scheduled_with_deposit" : "scheduled";
   return status;
 }
 
