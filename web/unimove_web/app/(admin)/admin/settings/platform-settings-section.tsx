@@ -39,13 +39,25 @@ export function PlatformSettingsSection() {
 
   return (
     <div
-      className="rounded-2xl p-6 space-y-4"
-      style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
+      className="rounded-2xl overflow-hidden"
+      style={{ border: "1px solid var(--border)" }}
     >
-      <div className="flex items-center justify-between gap-2">
+      {/* Header gradient tím nhạt */}
+      <div
+        className="px-6 py-4 flex items-center justify-between"
+        style={{
+          background: "linear-gradient(135deg, #EDE9FE 0%, #F5F3FF 100%)",
+          borderBottom: "1px solid #DDD6FE",
+        }}
+      >
         <div className="flex items-center gap-2">
-          <Settings className="w-4 h-4" style={{ color: "var(--primary)" }} />
-          <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+          <div
+            className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: "#7C3AED" }}
+          >
+            <Settings className="w-4 h-4 text-white" />
+          </div>
+          <h2 className="text-sm font-semibold" style={{ color: "#3B0764" }}>
             Thông tin hệ thống
           </h2>
         </div>
@@ -53,12 +65,16 @@ export function PlatformSettingsSection() {
           type="button"
           onClick={load}
           disabled={loading}
-          className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
-          style={{ color: "var(--muted)" }}
+          className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-50 flex items-center gap-1"
+          style={{ color: "#6D28D9" }}
         >
+          <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
           Tải lại
         </button>
       </div>
+
+      {/* Content */}
+      <div className="p-6 space-y-3" style={{ backgroundColor: "var(--card)" }}>
 
       {loading && (
         <div className="flex items-center justify-center py-10">
@@ -93,6 +109,7 @@ export function PlatformSettingsSection() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -188,7 +205,7 @@ function SettingRow({
             type="button"
             onClick={() => setIsEditing(true)}
             className="flex items-center gap-1 text-xs font-medium shrink-0 transition-opacity hover:opacity-70"
-            style={{ color: "var(--primary)" }}
+            style={{ color: "#7C3AED" }}
           >
             <Pencil className="w-3.5 h-3.5" />
             Sửa
