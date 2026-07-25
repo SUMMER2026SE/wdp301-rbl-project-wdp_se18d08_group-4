@@ -77,11 +77,11 @@ function ActivityLogsContent() {
   }, [fetchData]);
 
   function handleTabChange(tab: ActivityTab) {
-    router.push(`/activity-logs?tab=${tab}&page=1`, { scroll: false });
+    router.push(`/admin/activity-logs?tab=${tab}&page=1`, { scroll: false });
   }
 
   function handlePageChange(newPage: number) {
-    router.push(`/activity-logs?tab=${activeTab}&page=${newPage}`, {
+    router.push(`/admin/activity-logs?tab=${activeTab}&page=${newPage}`, {
       scroll: false,
     });
   }
