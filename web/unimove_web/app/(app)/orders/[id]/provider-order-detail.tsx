@@ -596,6 +596,23 @@ function StatusAlerts({ order, myQuote }: { order: OrderDetail; myQuote: MyQuote
       </Card>
     );
   }
+  if ((order.status === "scheduled" || order.status === "accepted") && order.deposit_paid) {
+    return (
+      <Card className="border-blue-200 bg-blue-50/50 shadow-sm">
+        <CardContent className="flex gap-3 py-4">
+          <Wallet size={18} className="mt-0.5 shrink-0 text-blue-600" />
+          <div>
+            <p className="font-semibold text-blue-800">Khách đã đặt cọc thành công</p>
+            <p className="text-xs text-blue-600">
+              {order.status === "scheduled"
+                ? "Đơn đã được xếp lịch. Hãy chuẩn bị đến lấy hàng đúng giờ hẹn."
+                : "Đơn đã xác nhận. Hãy đến lấy hàng sớm."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
   return null;
 }
 
@@ -626,20 +643,33 @@ function OrderActions({
   onUploadPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onCancel: () => void;
 }) {
+  /** Nút chat nhỏ gọn dùng chung */
   const chatBtn = (
-    <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+    <Button variant="ghost" size="sm" className="w-full gap-2 text-gray-500 hover:text-gray-700" asChild>
       <Link href={`/tai-xe/tin-nhan?orderId=${order.id}`}>
-        <MessageSquare size={15} /> Chat với khách
+        <MessageSquare size={14} /> Chat với khách
       </Link>
     </Button>
   );
 
+  /** Nút hủy dạng text link — ít nổi hơn, tránh trigger nhầm */
+  const cancelBtn = (
+    <button
+      type="button"
+      onClick={onCancel}
+      className="mt-1 w-full text-center text-xs text-gray-400 underline-offset-2 hover:text-red-500 hover:underline transition-colors"
+    >
+      Hủy đơn
+    </button>
+  );
+
+  /* ── Báo giá theo yêu cầu ── */
   if (order.status === "pending" && order.quote_request && !myQuote) {
     const parsed = parseInt(price, 10);
     return (
       <div className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="quote-price">Giá báo (VNĐ)</Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="quote-price" className="text-xs font-medium text-gray-600">Giá báo (VNĐ)</Label>
           <Input
             id="quote-price"
             inputMode="numeric"
@@ -652,8 +682,8 @@ function OrderActions({
             <p className="text-xs font-semibold text-[#1A56DB]">= {formatVND(parsed)}</p>
           )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="quote-note">Ghi chú (tuỳ chọn)</Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="quote-note" className="text-xs font-medium text-gray-600">Ghi chú (tuỳ chọn)</Label>
           <Input
             id="quote-note"
             placeholder="VD: 2 người khuân, xe 1 tấn..."
@@ -668,77 +698,132 @@ function OrderActions({
     );
   }
 
+  /* ── Nhận / bỏ qua đơn thường ── */
   if (order.status === "pending" && !order.quote_request) {
     return (
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="outline" size="sm" loading={acting} onClick={() => onRespond("reject")}>
+      <div className="space-y-2">
+        <Button size="sm" className="w-full gap-2" loading={acting} onClick={() => onRespond("accept")}>
+          <CheckCircle size={15} /> Nhận đơn này
+        </Button>
+        <Button variant="ghost" size="sm" className="w-full gap-1.5 text-gray-400 hover:text-gray-600" loading={acting} onClick={() => onRespond("reject")}>
           Bỏ qua
         </Button>
-        <Button size="sm" className="gap-1.5" loading={acting} onClick={() => onRespond("accept")}>
-          <CheckCircle size={15} /> Nhận đơn
-        </Button>
       </div>
     );
   }
 
+  /* ── Scheduled: chờ đến ngày, xác nhận khi sẵn sàng ── */
+  if (order.status === "scheduled") {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-center">
+          <p className="text-xs font-medium text-blue-700">Đơn đặt trước · Khách đã cọc</p>
+          <p className="mt-0.5 text-[11px] text-blue-500">Nhấn khi bạn chuẩn bị xuất phát</p>
+        </div>
+        <Button
+          className="w-full gap-2 rounded-xl bg-[#1A56DB] py-5 text-sm font-semibold hover:bg-[#1647c0]"
+          loading={acting}
+          onClick={() => onLifecycle("start")}
+        >
+          <Truck size={16} /> Bắt đầu chuyến
+        </Button>
+        <div className="flex items-center gap-2">
+          <Separator className="flex-1" />
+          <span className="text-[10px] text-gray-300">hoặc</span>
+          <Separator className="flex-1" />
+        </div>
+        {chatBtn}
+        {cancelBtn}
+      </div>
+    );
+  }
+
+  /* ── Accepted: đang chuẩn bị đến lấy ── */
   if (order.status === "accepted") {
     return (
-      <div className="space-y-2">
-        <Button className="w-full gap-2" loading={acting} onClick={() => onLifecycle("start")}>
-          <Truck size={15} /> Đang đến lấy hàng
+      <div className="space-y-3">
+        <Button
+          className="w-full gap-2 rounded-xl bg-violet-600 py-5 text-sm font-semibold hover:bg-violet-700"
+          loading={acting}
+          onClick={() => onLifecycle("start")}
+        >
+          <Truck size={16} /> Đang đến lấy hàng
         </Button>
+        <div className="flex items-center gap-2">
+          <Separator className="flex-1" />
+          <span className="text-[10px] text-gray-300">hoặc</span>
+          <Separator className="flex-1" />
+        </div>
         {chatBtn}
-        <Button variant="destructive" size="sm" className="w-full gap-2" onClick={onCancel}>
-          <XCircle size={15} /> Hủy đơn
-        </Button>
+        {cancelBtn}
       </div>
     );
   }
 
+  /* ── Picking up: đã đến nơi, bắt đầu vận chuyển ── */
   if (order.status === "picking_up") {
     return (
-      <div className="space-y-2">
-        <Button className="w-full gap-2" loading={acting} onClick={() => onLifecycle("start")}>
-          <Truck size={15} /> Đang vận chuyển
+      <div className="space-y-3">
+        <Button
+          className="w-full gap-2 rounded-xl bg-violet-600 py-5 text-sm font-semibold hover:bg-violet-700"
+          loading={acting}
+          onClick={() => onLifecycle("start")}
+        >
+          <Truck size={16} /> Bắt đầu vận chuyển
         </Button>
+        <div className="flex items-center gap-2">
+          <Separator className="flex-1" />
+          <span className="text-[10px] text-gray-300">hoặc</span>
+          <Separator className="flex-1" />
+        </div>
         {chatBtn}
-        <Button variant="destructive" size="sm" className="w-full gap-2" onClick={onCancel}>
-          <XCircle size={15} /> Hủy đơn
-        </Button>
+        {cancelBtn}
       </div>
     );
   }
 
+  /* ── In progress: hoàn thành + upload ảnh ── */
   if (order.status === "in_progress") {
     return (
-      <div className="space-y-2">
+      <div className="space-y-3">
         <input type="file" accept="image/*" id="delivery-photo" className="hidden" onChange={onUploadPhoto} />
+        <Button
+          className="w-full gap-2 rounded-xl bg-emerald-600 py-5 text-sm font-semibold hover:bg-emerald-700"
+          loading={acting}
+          onClick={() => onLifecycle("complete")}
+        >
+          <CheckCircle size={16} /> Hoàn thành đơn
+        </Button>
         <Button
           variant="outline"
           size="sm"
-          className="w-full gap-2"
+          className="w-full gap-2 rounded-xl border-dashed"
           onClick={() => document.getElementById("delivery-photo")?.click()}
         >
-          <Camera size={15} /> Ảnh giao hàng
+          <Camera size={14} /> Chụp ảnh giao hàng
         </Button>
-        <Button className="w-full gap-2" loading={acting} onClick={() => onLifecycle("complete")}>
-          <CheckCircle size={15} /> Hoàn thành đơn
-        </Button>
+        <div className="flex items-center gap-2">
+          <Separator className="flex-1" />
+          <span className="text-[10px] text-gray-300">hoặc</span>
+          <Separator className="flex-1" />
+        </div>
         {chatBtn}
-        <Button variant="destructive" size="sm" className="w-full gap-2" onClick={onCancel}>
-          <XCircle size={15} /> Hủy đơn
-        </Button>
+        {cancelBtn}
       </div>
     );
   }
 
+  /* ── Đã gửi báo giá, chờ khách ── */
   if (order.status === "pending" && order.quote_request && myQuote) {
     return (
-      <p className="text-sm text-gray-500">Đã gửi báo giá — chờ khách phản hồi.</p>
+      <div className="rounded-xl border border-amber-100 bg-amber-50/60 px-4 py-3 text-center">
+        <p className="text-xs font-medium text-amber-700">Đã gửi báo giá</p>
+        <p className="mt-0.5 text-[11px] text-amber-500">Đang chờ khách xác nhận…</p>
+      </div>
     );
   }
 
   return (
-    <p className="text-sm text-gray-500">Không có thao tác khả dụng cho trạng thái này.</p>
+    <p className="text-sm text-gray-400">Không có thao tác khả dụng.</p>
   );
 }

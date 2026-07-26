@@ -21,6 +21,14 @@ router.post(
   providersController.uploadDocuments,
 );
 
-router.get('/:id', requireAuth, providersController.getById);
+router.post(
+  '/me/request-verification',
+  requireAuth,
+  requireRole('provider'),
+  providersController.requestVerification,
+);
+
+// Public — no auth required for viewing a provider's public profile
+router.get('/:id', providersController.getById);
 
 module.exports = router;

@@ -194,8 +194,9 @@ async function createListing(userId, body) {
 
   const listingsCreated = await countOwnerListings(userId);
   const feeInfo = buildListingFeeInfo(price, listingsCreated);
-  const requiresPayment = feeInfo.requires_payment;
 
+  // Bài đăng luôn được kích hoạt ngay khi nhấn "Đăng tin ngay",
+  // không giữ trạng thái hidden chờ thanh toán phí.
   const { data, error } = await supabaseAdmin
     .from('marketplace_listings')
     .insert([{
@@ -208,8 +209,8 @@ async function createListing(userId, body) {
       price:          Number(price),
       images:         Array.isArray(images) ? images : [],
       usage_duration: usage_duration ? String(usage_duration).trim() : null,
-      status:      requiresPayment ? 'hidden' : 'active',
-      fee_paid:    !requiresPayment,
+      status:      'active',
+      fee_paid:    true,
     }])
     .select(`
       id, title, description, category, condition, area,
@@ -223,7 +224,7 @@ async function createListing(userId, body) {
     listing: data,
     listing_fee: {
       amount: feeInfo.amount,
-      requires_payment: feeInfo.requires_payment,
+      requires_payment: false,
       reason: feeInfo.reason,
       message: feeInfo.message,
       free_listings_total: feeInfo.free_listings_total,

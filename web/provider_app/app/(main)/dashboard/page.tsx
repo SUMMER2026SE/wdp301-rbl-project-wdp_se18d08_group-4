@@ -10,8 +10,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { providerOrdersApi, providerNotificationsApi } from "@/lib/api";
-import { getStoredUser, type ProviderUser } from "@/lib/auth";
+import { providerOrdersApi, providerNotificationsApi, providerProfileApi } from "@/lib/api";
+import { getStoredUser, storeUser, type ProviderUser } from "@/lib/auth";
 import { formatVND, getOrderStatusLabel, getOrderStatusColor, timeAgo } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 
@@ -38,10 +38,11 @@ export default function ProviderDashboardPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [pendingRes, activeRes, notifRes] = await Promise.allSettled([
+      const [pendingRes, activeRes, notifRes, profileRes] = await Promise.allSettled([
         providerOrdersApi.getOrders({ status: "pending" }),
         providerOrdersApi.getOrders({ status: "accepted,picking_up,in_progress" }),
         providerNotificationsApi.getUnreadCount(),
+        providerProfileApi.getMe(),
       ]);
       if (pendingRes.status === "fulfilled" && pendingRes.value.success) {
         const d = pendingRes.value.data as { orders?: Order[] };
@@ -54,6 +55,12 @@ export default function ProviderDashboardPage() {
       if (notifRes.status === "fulfilled" && notifRes.value.success) {
         const d = notifRes.value.data as { count?: number };
         setUnreadCount(d?.count ?? 0);
+      }
+      if (profileRes.status === "fulfilled" && profileRes.value.success && profileRes.value.data) {
+        const freshUser = profileRes.value.data as ProviderUser;
+        setUser(freshUser);
+        const token = localStorage.getItem("provider_token");
+        if (token) storeUser(freshUser, token);
       }
     } finally {
       setLoading(false);
@@ -123,7 +130,28 @@ export default function ProviderDashboardPage() {
         </div>
 
         {/* Verification banner */}
-        {user && !user.is_verified && (
+        {user && !user.is_verified && user.verification_status === "rejected" && (
+          <Link href="/documents">
+            <div className="mb-4 px-4 py-3 rounded-2xl flex items-center gap-3" style={{ backgroundColor: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.4)" }}>
+              <XCircle size={18} className="text-red-300 shrink-0" />
+              <div className="flex-1">
+                <p className="text-red-200 text-xs font-bold">Hồ sơ bị từ chối</p>
+                <p className="text-red-100 text-[11px]">Nhấn để xem lý do và nộp lại giấy tờ</p>
+              </div>
+              <ChevronRight size={16} className="text-red-200" />
+            </div>
+          </Link>
+        )}
+        {user && !user.is_verified && user.verification_status === "pending" && (
+          <div className="mb-4 px-4 py-3 rounded-2xl flex items-center gap-3" style={{ backgroundColor: "rgba(59,130,246,0.2)", border: "1px solid rgba(59,130,246,0.4)" }}>
+            <Clock size={18} className="text-blue-300 shrink-0" />
+            <div className="flex-1">
+              <p className="text-blue-200 text-xs font-bold">Đang chờ xét duyệt</p>
+              <p className="text-blue-100 text-[11px]">Admin sẽ xét duyệt hồ sơ trong vòng 24h</p>
+            </div>
+          </div>
+        )}
+        {user && !user.is_verified && !user.verification_status && (
           <Link href="/documents">
             <div className="mb-4 px-4 py-3 rounded-2xl flex items-center gap-3" style={{ backgroundColor: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.4)" }}>
               <AlertTriangle size={18} className="text-yellow-300 shrink-0" />
@@ -248,7 +276,13 @@ export default function ProviderDashboardPage() {
               <div>
                 <p className="font-semibold text-sm" style={{ color: "var(--text)" }}>Hồ sơ</p>
                 <p className="text-xs" style={{ color: "var(--muted)" }}>
-                  {user?.is_verified ? "✓ Đã xác minh" : "Chưa xác minh"}
+                  {user?.is_verified
+                    ? "✓ Đã xác minh"
+                    : user?.verification_status === "rejected"
+                      ? "⚠ Bị từ chối"
+                      : user?.verification_status === "pending"
+                        ? "⏳ Đang xét duyệt"
+                        : "Chưa xác minh"}
                 </p>
               </div>
             </Card>

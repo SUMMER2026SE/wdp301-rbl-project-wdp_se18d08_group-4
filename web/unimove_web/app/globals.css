@@ -175,9 +175,9 @@
    ============================================================ */
 :root {
   /* Backgrounds */
-  --bg:        #F8FAFC;
+  --bg:        #F5F6FA;
   --surface:   #FFFFFF;
-  --surface-2: #F1F5F9;
+  --surface-2: #EEEEF5;
   --card:      #FFFFFF;
 
   /* Text */
@@ -187,22 +187,22 @@
 
   /* Border & focus ring */
   --border: #E2E8F0;
-  --ring:   #2563EB;
+  --ring:   #4F46E5;
 
   /* Muted (admin compat) */
   --muted-surface: #F1F5F9;
   --muted:         #64748B;
 
   /* Accent (admin compat — maps to primary in customer UI) */
-  --accent:            #2563EB;
-  --accent-secondary:  #3B82F6;
+  --accent:            #4F46E5;
+  --accent-secondary:  #6366F1;
   --accent-foreground: #FFFFFF;
 
   /* Primary */
-  --primary:       #2563EB;
-  --primary-light: #3B82F6;
-  --primary-dark:  #1D4ED8;
-  --primary-tint:  rgba(37, 99, 235, 0.08);
+  --primary:       #4F46E5;
+  --primary-light: #6366F1;
+  --primary-dark:  #4338CA;
+  --primary-tint:  rgba(79, 70, 229, 0.08);
 
   /* Status */
   --success:      #16A34A;

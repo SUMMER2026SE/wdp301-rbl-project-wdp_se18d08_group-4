@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -10,6 +10,8 @@ import { ordersApi, providersApi } from "@/lib/api";
 import { timeAgo, formatVND } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { getStoredUser } from "@/lib/auth";
+
+const POLL_INTERVAL_MS = 30_000; // tự làm mới mỗi 30 giây
 
 interface Order {
   id: string; status: string; deposit_paid?: boolean; quote_request?: boolean;
@@ -33,19 +35,22 @@ const TABS = [
 ];
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-  pending:              { label: "Chờ xác nhận",        bg: "#FEF9C3", text: "#A16207", dot: "#EAB308" },
-  matched_no_deposit:   { label: "Chờ khách đặt cọc",   bg: "#FFF7ED", text: "#C2410C", dot: "#F97316" },
-  matched_with_deposit: { label: "Chờ bạn xác nhận",    bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
-  accepted:             { label: "Đã xác nhận",         bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
-  picking_up:           { label: "Đang đến lấy hàng",   bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
-  in_progress:          { label: "Đang vận chuyển",     bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
-  completed:            { label: "Hoàn thành",          bg: "#DCFCE7", text: "#15803D", dot: "#16A34A" },
-  cancelled:            { label: "Đã hủy",              bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
-  disputed:             { label: "Khiếu nại",           bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
+  pending:                  { label: "Chờ xác nhận",               bg: "#FEF9C3", text: "#A16207", dot: "#EAB308" },
+  matched_no_deposit:       { label: "Khách đã chọn · Chờ đặt cọc", bg: "#FFF7ED", text: "#C2410C", dot: "#F97316" },
+  matched_with_deposit:     { label: "Chờ bạn xác nhận",           bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
+  scheduled:                { label: "Đã xếp lịch",                bg: "#F3F4F6", text: "#374151", dot: "#9CA3AF" },
+  scheduled_with_deposit:   { label: "Đã xếp lịch · Đã cọc",       bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
+  accepted:                 { label: "Đã xác nhận",                bg: "#DBEAFE", text: "#1D4ED8", dot: "#3B82F6" },
+  picking_up:               { label: "Đang đến lấy hàng",          bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
+  in_progress:              { label: "Đang vận chuyển",            bg: "#EDE9FE", text: "#6D28D9", dot: "#8B5CF6" },
+  completed:                { label: "Hoàn thành",                 bg: "#DCFCE7", text: "#15803D", dot: "#16A34A" },
+  cancelled:                { label: "Đã hủy",                     bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
+  disputed:                 { label: "Khiếu nại",                  bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
 };
 
 function resolveStatusKey(status: string, depositPaid?: boolean): string {
   if (status === "matched") return depositPaid ? "matched_with_deposit" : "matched_no_deposit";
+  if (status === "scheduled") return depositPaid ? "scheduled_with_deposit" : "scheduled";
   return status;
 }
 
@@ -109,6 +114,23 @@ export default function ProviderOrdersPage() {
     const isQuoted = TABS[tab].quoted;
     load(TABS[tab].key, !isQuoted && nearbyOnly && providerWard ? providerWard : undefined);
   }, [tab, nearbyOnly, load, providerWard]);
+
+  // Auto-polling mỗi 30 giây — giúp provider thấy ngay khi khách chọn báo giá
+  const tabRef = useRef(tab);
+  const nearbyRef = useRef(nearbyOnly);
+  useEffect(() => { tabRef.current = tab; }, [tab]);
+  useEffect(() => { nearbyRef.current = nearbyOnly; }, [nearbyOnly]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const isQuoted = TABS[tabRef.current].quoted;
+      load(
+        TABS[tabRef.current].key,
+        !isQuoted && nearbyRef.current && providerWard ? providerWard : undefined,
+      );
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [load, providerWard]);
 
   const filtered = orders.filter(o =>
     !search ||

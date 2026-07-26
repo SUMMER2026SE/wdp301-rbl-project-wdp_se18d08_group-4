@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 
 import React, { useState, useEffect, useCallback, useTransition } from "react";
-import { AlertTriangle, RefreshCw, DollarSign } from "lucide-react";
+import { AlertTriangle, RefreshCw, DollarSign, X, ZoomIn, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 
 import {
   getDisputes,
@@ -73,13 +73,127 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 interface DisputeMessage {
   id: string;
-  content: string;
+  /** backend returns 'message', frontend type used 'content' — support both */
+  message?: string;
+  content?: string;
   created_at: string;
-  sender?: { id: string; full_name: string; role: string; avatar_url: string | null };
+  attachments?: string[] | null;
+  sender?: { id?: string; full_name: string; role: string; avatar_url?: string | null };
 }
 
-interface DisputeDetail extends Dispute {
-  messages?: DisputeMessage[];
+/** Raw shape returned by backend GET /admin/disputes/:id — field names differ from Dispute type */
+interface DisputeRawDetail {
+  id: string;
+  order_id: string;
+  raised_by: string;
+  raised_by_role: string;
+  against_user_id: string | null;
+  dispute_type: DisputeType;
+  subject: string;
+  description: string;
+  evidence_images: string[] | null;
+  status: DisputeStatus;
+  priority: string;
+  resolution: string | null;
+  resolution_type: string | null;
+  refund_amount: number | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Backend joins order as "orders" */
+  orders?: { order_number: string; total_price: number; status: string } | null;
+  /** Backend joins raiser as "raised_by_profile" */
+  raised_by_profile?: { full_name: string; email: string; phone?: string; role: string } | null;
+  /** Backend joins against as "against_user_profile" */
+  against_user_profile?: { full_name: string; email: string; role: string } | null;
+  dispute_messages?: DisputeMessage[];
+}
+
+// ---------------------------------------------------------------------------
+// Image Lightbox
+// ---------------------------------------------------------------------------
+
+function ImageLightbox({
+  images,
+  initialIndex,
+  onClose,
+}: {
+  images: string[];
+  initialIndex: number;
+  onClose: () => void;
+}) {
+  const [idx, setIdx] = useState(initialIndex);
+
+  const prev = () => setIdx((i) => (i - 1 + images.length) % images.length);
+  const next = () => setIdx((i) => (i + 1) % images.length);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") prev();
+      if (e.key === "ArrowRight") next();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85"
+      onClick={onClose}
+    >
+      <button
+        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+        onClick={onClose}
+      >
+        <X size={18} className="text-white" />
+      </button>
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/70 text-sm">
+        {idx + 1} / {images.length}
+      </div>
+      {images.length > 1 && (
+        <button
+          className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+          onClick={(e) => { e.stopPropagation(); prev(); }}
+        >
+          <ChevronLeft size={22} className="text-white" />
+        </button>
+      )}
+      <div className="max-w-[90vw] max-h-[85vh] flex items-center" onClick={(e) => e.stopPropagation()}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={images[idx]}
+          alt={`Bằng chứng ${idx + 1}`}
+          className="max-w-full max-h-[85vh] rounded-lg object-contain shadow-2xl"
+        />
+      </div>
+      {images.length > 1 && (
+        <button
+          className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+          onClick={(e) => { e.stopPropagation(); next(); }}
+        >
+          <ChevronRight size={22} className="text-white" />
+        </button>
+      )}
+      {images.length > 1 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+          {images.map((url, i) => (
+            <button
+              key={i}
+              onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+              className={cn(
+                "w-12 h-12 rounded-md overflow-hidden border-2 transition-all",
+                i === idx ? "border-white opacity-100" : "border-transparent opacity-50 hover:opacity-75"
+              )}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +208,7 @@ interface DisputeDetailDialogProps {
 }
 
 function DisputeDetailDialog({ disputeId, open, onClose, onResolved }: DisputeDetailDialogProps) {
-  const [detail, setDetail] = useState<DisputeDetail | null>(null);
+  const [detail, setDetail] = useState<DisputeRawDetail | null>(null);
   const [messages, setMessages] = useState<DisputeMessage[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -103,15 +217,19 @@ function DisputeDetailDialog({ disputeId, open, onClose, onResolved }: DisputeDe
   const [refundAmount, setRefundAmount] = useState("");
   const [submitting, startSubmit] = useTransition();
 
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
   useEffect(() => {
     if (!open || !disputeId) return;
     setLoading(true);
     setResolution("");
     setResolutionType("no_action");
     setRefundAmount("");
+    setLightboxOpen(false);
     getDisputeById(disputeId).then(({ dispute, messages: msgs }) => {
-      setDetail(dispute as DisputeDetail | null);
-      setMessages(msgs as DisputeMessage[]);
+      setDetail(dispute as unknown as DisputeRawDetail | null);
+      setMessages((msgs ?? []) as DisputeMessage[]);
       setLoading(false);
     });
   }, [open, disputeId]);
@@ -131,137 +249,229 @@ function DisputeDetailDialog({ disputeId, open, onClose, onResolved }: DisputeDe
     });
   };
 
+  const openLightbox = (index: number) => {
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  };
+
+  const evidenceImages = detail?.evidence_images ?? [];
+  const raiserName = (detail as any)?.raised_by_profile?.full_name ?? (detail as any)?.raiser?.full_name ?? "—";
+  const orderNumber = (detail as any)?.orders?.order_number ?? (detail as any)?.order?.order_number ?? detail?.order_id ?? "—";
+
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Chi tiết khiếu nại</DialogTitle>
-        </DialogHeader>
+    <>
+      {lightboxOpen && evidenceImages.length > 0 && (
+        <ImageLightbox
+          images={evidenceImages}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
 
-        {loading && (
-          <div className="flex items-center justify-center py-10">
-            <RefreshCw className="w-6 h-6 animate-spin" style={{ color: "var(--muted)" }} />
-          </div>
-        )}
+      <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Chi tiết khiếu nại</DialogTitle>
+          </DialogHeader>
 
-        {!loading && detail && (
-          <div className="space-y-5">
-            {/* Meta */}
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <span style={{ color: "var(--muted)" }}>Mã đơn: </span>
-                <span className="font-medium" style={{ color: "var(--text)" }}>
-                  #{(detail.order as { order_number?: string } | undefined)?.order_number ?? detail.order_id}
-                </span>
-              </div>
-              <div>
-                <span style={{ color: "var(--muted)" }}>Loại: </span>
-                <span className="font-medium" style={{ color: "var(--text)" }}>
-                  {DISPUTE_TYPE_LABELS[detail.dispute_type]}
-                </span>
-              </div>
-              <div>
-                <span style={{ color: "var(--muted)" }}>Người khiếu nại: </span>
-                <span className="font-medium" style={{ color: "var(--text)" }}>
-                  {detail.raiser?.full_name ?? "—"} ({detail.raised_by_role === "customer" ? "Khách hàng" : "Tài xế"})
-                </span>
-              </div>
-              <div>
-                <span style={{ color: "var(--muted)" }}>Trạng thái: </span>
-                <StatusBadge type="dispute" status={detail.status} />
-              </div>
+          {loading && (
+            <div className="flex items-center justify-center py-10">
+              <RefreshCw className="w-6 h-6 animate-spin" style={{ color: "var(--muted)" }} />
             </div>
+          )}
 
-            {/* Subject & Description */}
-            <div>
-              <p className="text-sm font-semibold mb-1" style={{ color: "var(--text)" }}>{detail.subject}</p>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{detail.description}</p>
-            </div>
-
-            {/* Evidence Images */}
-            {detail.evidence_images && detail.evidence_images.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--muted)" }}>
-                  Bằng chứng ({detail.evidence_images.length} ảnh)
-                </p>
-                <div className="grid grid-cols-4 gap-2">
-                  {detail.evidence_images.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={url}
-                        alt={`Bằng chứng ${i + 1}`}
-                        className="w-full aspect-square object-cover rounded-lg border"
-                        style={{ borderColor: "var(--border)" }}
-                      />
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Messages */}
-            {messages.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--muted)" }}>
-                  Tin nhắn ({messages.length})
-                </p>
-                <div
-                  className="rounded-xl border p-3 space-y-3 max-h-48 overflow-y-auto"
-                  style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-                >
-                  {messages.map((msg) => (
-                    <div key={msg.id}>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
-                          {msg.sender?.full_name ?? "—"}
-                        </span>
-                        <span className="text-xs" style={{ color: "var(--muted)" }}>
-                          · {formatDateTime(msg.created_at)}
-                        </span>
-                      </div>
-                      <p className="text-sm" style={{ color: "var(--muted)" }}>{msg.content}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Resolution Form — only for open/investigating disputes */}
-            {(detail.status === "open" || detail.status === "investigating") && (
-              <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)" }}>
-                <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>Giải quyết khiếu nại</p>
-
+          {!loading && detail && (
+            <div className="flex-1 overflow-y-auto pr-1 space-y-5 min-h-0">
+              {/* Meta */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>
-                    Loại giải quyết
-                  </label>
-                  <Select value={resolutionType} onValueChange={setResolutionType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="no_action">Không xử phạt</SelectItem>
-                      <SelectItem value="refund">Hoàn tiền toàn bộ</SelectItem>
-                      <SelectItem value="partial_refund">Hoàn tiền một phần</SelectItem>
-                      <SelectItem value="provider_penalty">Phạt tài xế</SelectItem>
-                      <SelectItem value="customer_penalty">Phạt khách hàng</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <span style={{ color: "var(--muted)" }}>Mã đơn: </span>
+                  <span className="font-medium" style={{ color: "var(--text)" }}>
+                    #{orderNumber}
+                  </span>
                 </div>
+                <div>
+                  <span style={{ color: "var(--muted)" }}>Loại: </span>
+                  <span className="font-medium" style={{ color: "var(--text)" }}>
+                    {DISPUTE_TYPE_LABELS[detail.dispute_type]}
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: "var(--muted)" }}>Người khiếu nại: </span>
+                  <span className="font-medium" style={{ color: "var(--text)" }}>
+                    {raiserName} ({detail.raised_by_role === "customer" ? "Khách hàng" : "Tài xế"})
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: "var(--muted)" }}>Trạng thái: </span>
+                  <StatusBadge type="dispute" status={detail.status} />
+                </div>
+              </div>
 
-                {needsRefund && (
+              {/* Subject & Description */}
+              <div>
+                <p className="text-sm font-semibold mb-1" style={{ color: "var(--text)" }}>{detail.subject}</p>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{detail.description}</p>
+              </div>
+
+              {/* Evidence Images */}
+              {evidenceImages.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--muted)" }}>
+                    Ảnh bằng chứng ({evidenceImages.length})
+                  </p>
+                  <div className={cn(
+                    "grid gap-2",
+                    evidenceImages.length === 1 ? "grid-cols-1" :
+                    evidenceImages.length === 2 ? "grid-cols-2" :
+                    evidenceImages.length === 3 ? "grid-cols-3" :
+                    "grid-cols-4"
+                  )}>
+                    {evidenceImages.map((url, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => openLightbox(i)}
+                        className="relative group aspect-square rounded-lg overflow-hidden border focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                        style={{ borderColor: "var(--border)" }}
+                        aria-label={`Xem ảnh bằng chứng ${i + 1}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Bằng chứng ${i + 1}`}
+                          className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
+                            (e.currentTarget.nextElementSibling as HTMLElement | null)?.style.setProperty("display", "flex");
+                          }}
+                        />
+                        <span className="hidden absolute inset-0 items-center justify-center text-gray-400" style={{ backgroundColor: "var(--surface)" }}>
+                          <ImageOff size={20} />
+                        </span>
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ZoomIn size={20} className="text-white drop-shadow" />
+                        </span>
+                        <span className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] leading-none px-1.5 py-0.5 rounded">
+                          {i + 1}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] mt-1.5" style={{ color: "var(--muted)" }}>
+                    Nhấn vào ảnh để xem phóng to
+                  </p>
+                </div>
+              ) : (
+                <div
+                  className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm"
+                  style={{ backgroundColor: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)" }}
+                >
+                  <ImageOff size={15} className="shrink-0" />
+                  <span>Không có ảnh bằng chứng đính kèm</span>
+                </div>
+              )}
+
+              {/* Messages */}
+              {messages.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--muted)" }}>
+                    Tin nhắn ({messages.length})
+                  </p>
+                  <div
+                    className="rounded-xl border p-3 space-y-3 max-h-48 overflow-y-auto"
+                    style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+                  >
+                    {messages.map((msg) => (
+                      <div key={msg.id}>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+                            {msg.sender?.full_name ?? "—"}
+                          </span>
+                          <span className="text-xs" style={{ color: "var(--muted)" }}>
+                            · {formatDateTime(msg.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-sm" style={{ color: "var(--muted)" }}>
+                          {msg.message ?? msg.content}
+                        </p>
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {msg.attachments.map((att, ai) => (
+                              <a
+                                key={ai}
+                                href={att}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block w-14 h-14 rounded overflow-hidden border"
+                                style={{ borderColor: "var(--border)" }}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={att} alt="" className="w-full h-full object-cover" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Resolution Form — only for open/investigating disputes */}
+              {(detail.status === "open" || detail.status === "investigating") && (
+                <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)" }}>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>Giải quyết khiếu nại</p>
+
                   <div>
                     <label className="block text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>
-                      Số tiền hoàn (VND)
+                      Loại giải quyết
                     </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={refundAmount}
-                      onChange={(e) => setRefundAmount(e.target.value)}
-                      placeholder="Nhập số tiền hoàn..."
-                      className="w-full h-10 px-3 text-sm rounded-xl border outline-none transition-colors"
+                    <Select value={resolutionType} onValueChange={setResolutionType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="no_action">Không xử phạt</SelectItem>
+                        <SelectItem value="refund">Hoàn tiền toàn bộ</SelectItem>
+                        <SelectItem value="partial_refund">Hoàn tiền một phần</SelectItem>
+                        <SelectItem value="provider_penalty">Phạt tài xế</SelectItem>
+                        <SelectItem value="customer_penalty">Phạt khách hàng</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {needsRefund && (
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>
+                        Số tiền hoàn (VND)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={refundAmount}
+                        onChange={(e) => setRefundAmount(e.target.value)}
+                        placeholder="Nhập số tiền hoàn..."
+                        className="w-full h-10 px-3 text-sm rounded-xl border outline-none transition-colors"
+                        style={{
+                          backgroundColor: "var(--surface)",
+                          borderColor: "var(--border)",
+                          color: "var(--text)",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>
+                      Nội dung giải quyết
+                    </label>
+                    <textarea
+                      value={resolution}
+                      onChange={(e) => setResolution(e.target.value)}
+                      rows={3}
+                      placeholder="Mô tả quyết định giải quyết..."
+                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none resize-none transition-colors"
                       style={{
                         backgroundColor: "var(--surface)",
                         borderColor: "var(--border)",
@@ -269,46 +479,28 @@ function DisputeDetailDialog({ disputeId, open, onClose, onResolved }: DisputeDe
                       }}
                     />
                   </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>
-                    Nội dung giải quyết
-                  </label>
-                  <textarea
-                    value={resolution}
-                    onChange={(e) => setResolution(e.target.value)}
-                    rows={3}
-                    placeholder="Mô tả quyết định giải quyết..."
-                    className="w-full px-3 py-2 text-sm rounded-xl border outline-none resize-none transition-colors"
-                    style={{
-                      backgroundColor: "var(--surface)",
-                      borderColor: "var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" size="sm">Đóng</Button>
-          </DialogClose>
-          {detail && (detail.status === "open" || detail.status === "investigating") && (
-            <Button
-              size="sm"
-              disabled={!resolution.trim() || submitting}
-              onClick={handleResolve}
-            >
-              {submitting ? "Đang xử lý..." : "Giải quyết"}
-            </Button>
+              )}
+            </div>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+          <DialogFooter className="shrink-0 pt-2">
+            <DialogClose asChild>
+              <Button variant="outline" size="sm">Đóng</Button>
+            </DialogClose>
+            {detail && (detail.status === "open" || detail.status === "investigating") && (
+              <Button
+                size="sm"
+                disabled={!resolution.trim() || submitting}
+                onClick={handleResolve}
+              >
+                {submitting ? "Đang xử lý..." : "Giải quyết"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -79,6 +79,15 @@ async function getQuotedOrders(req, res, next) {
   }
 }
 
+async function requestVerification(req, res, next) {
+  try {
+    const data = await providersService.requestVerification(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   browse,
   getById,
@@ -88,4 +97,5 @@ module.exports = {
   uploadDocuments,
   getMyDocuments,
   getQuotedOrders,
+  requestVerification,
 };

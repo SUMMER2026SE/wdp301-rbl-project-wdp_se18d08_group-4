@@ -186,6 +186,9 @@ export const authApi = {
     post("/auth/change-password", { current_password: currentPassword, new_password: newPassword }),
   logout: () => post("/auth/logout", {}),
   googleAuth: (idToken: string) => post("/auth/google", { id_token: idToken }),
+  sendPhoneOtp: (phone: string, userId: string) => post("/auth/send-phone-otp", { phone, user_id: userId }),
+  verifyPhoneOtp: (otp: string, userId: string) => post("/auth/verify-phone-otp", { otp, user_id: userId }),
+  deleteAccount: () => del("/auth/me"),
 };
 
 /* ── Customer ── */
@@ -284,6 +287,7 @@ export const providerApi = {
     const fd = new FormData(); fd.append("avatar", file);
     return upload("/customers/me/avatar", fd);
   },
+  requestVerification: () => post("/providers/me/request-verification"),
 };
 
 /* ── Chat attachments ── */

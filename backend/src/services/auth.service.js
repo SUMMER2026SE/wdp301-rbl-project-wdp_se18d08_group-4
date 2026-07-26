@@ -24,7 +24,7 @@ const {
 } = require('./auth.helpers');
 const { hashPassword, verifyPassword, hashResetToken, generateResetToken } = require('../utils/password');
 const { supabaseAdmin } = require('./supabase.service');
-const { sendPasswordResetOtp } = require('./mail.service');
+const { sendPasswordResetOtp, sendPhoneOtp: sendPhoneOtpMail } = require('./mail.service');
 const { OAuth2Client } = require('google-auth-library');
 const env = require('../config/env');
 
@@ -220,11 +220,19 @@ async function login(body) {
     throw httpError(401, 'Invalid email or password', 'auth_failed');
   }
 
+  // Block disabled / suspended accounts before issuing any token
+  if (profile.status === 'inactive') {
+    throw httpError(403, 'Tài khoản đã bị vô hiệu hóa', 'account_inactive');
+  }
+  if (profile.status === 'suspended') {
+    throw httpError(403, 'Tài khoản đã bị tạm khóa', 'account_suspended');
+  }
+
   // For providers, include is_verified from provider_profiles
   if (profile.role === 'provider') {
     const { data: pp } = await supabaseAdmin
       .from('provider_profiles')
-      .select('business_name, is_verified, rating')
+      .select('business_name, is_verified, verification_status, rating')
       .eq('id', profile.id)
       .maybeSingle();
     const user = publicProfile(profile, pp || undefined);
@@ -260,7 +268,7 @@ async function getMe(userId) {
   if (row.role === 'provider') {
     const { data: pp } = await supabaseAdmin
       .from('provider_profiles')
-      .select('business_name, is_verified, rating, total_reviews, total_orders, vehicle_type, compliance_score')
+      .select('business_name, is_verified, verification_status, rating, total_reviews, total_orders, vehicle_type, compliance_score')
       .eq('id', userId)
       .maybeSingle();
     return publicProfile(row, pp || undefined);
@@ -313,6 +321,7 @@ async function updateProfile(userId, body) {
     const ppUpdates = {};
     if (business_name !== undefined) ppUpdates.business_name = String(business_name).trim();
     if (vehicle_type !== undefined) ppUpdates.vehicle_type = String(vehicle_type).trim();
+    if (body?.vehicle_plate !== undefined) ppUpdates.vehicle_plate = String(body.vehicle_plate).trim().toUpperCase();
     if (Object.keys(ppUpdates).length > 0) {
       const { error } = await supabaseAdmin.from('provider_profiles').update(ppUpdates).eq('id', userId);
       if (error) throw httpError(500, error.message, 'db_error');
@@ -603,6 +612,145 @@ async function logout(accessToken) {
   return { message: 'Đăng xuất thành công' };
 }
 
+/** POST /api/auth/send-phone-otp — gửi OTP xác minh SĐT qua email */
+async function sendPhoneOtp(body) {
+  const { phone, user_id } = body || {};
+  if (!phone || !user_id) {
+    throw httpError(400, 'phone và user_id là bắt buộc', 'validation_error');
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('id, email, full_name')
+    .eq('id', user_id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    throw httpError(404, 'Không tìm thấy user', 'user_not_found');
+  }
+
+  const otp = generateResetToken();
+  const tokenHash = hashResetToken(otp);
+  const expiresMinutes = 10;
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
+
+  // Xóa OTP cũ chưa dùng của user này
+  await supabaseAdmin
+    .from('password_reset_tokens')
+    .delete()
+    .eq('user_id', user_id)
+    .is('used_at', null);
+
+  const { error: insertError } = await supabaseAdmin.from('password_reset_tokens').insert({
+    user_id,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+  });
+
+  if (insertError) throw httpError(500, insertError.message, 'db_error');
+
+  try {
+    await sendPhoneOtpMail({
+      to: profile.email,
+      otp,
+      phone,
+      expiresMinutes,
+    });
+  } catch (mailErr) {
+    throw httpError(mailErr.status || 502, mailErr.message, mailErr.code || 'smtp_error');
+  }
+
+  return { message: 'Mã OTP đã được gửi đến email của bạn' };
+}
+
+/** POST /api/auth/verify-phone-otp — xác minh OTP */
+async function verifyPhoneOtp(body) {
+  const { otp, user_id } = body || {};
+  if (!otp || !user_id) {
+    throw httpError(400, 'otp và user_id là bắt buộc', 'validation_error');
+  }
+
+  const tokenHash = hashResetToken(String(otp).trim());
+
+  const { data: tokens, error: tokenError } = await supabaseAdmin
+    .from('password_reset_tokens')
+    .select('*')
+    .eq('user_id', user_id)
+    .eq('token_hash', tokenHash)
+    .is('used_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .limit(1);
+
+  if (tokenError) throw httpError(500, tokenError.message, 'db_error');
+
+  if (!tokens || tokens.length === 0) {
+    throw httpError(400, 'Mã OTP không hợp lệ hoặc đã hết hạn', 'invalid_otp');
+  }
+
+  const { error: markError } = await supabaseAdmin
+    .from('password_reset_tokens')
+    .update({ used_at: new Date().toISOString() })
+    .eq('id', tokens[0].id);
+
+  if (markError) throw httpError(500, markError.message, 'db_error');
+
+  return { message: 'Xác minh thành công', verified: true };
+}
+
+/**
+ * Vô hiệu hóa tài khoản provider (soft delete).
+ * - Kiểm tra không có đơn hàng đang active
+ * - Đặt status = 'inactive', is_available = false
+ * - Xóa token session
+ */
+async function deactivateAccount(userId) {
+  // Kiểm tra role phải là provider
+  const { data: profile, error: profileErr } = await supabaseAdmin
+    .from('profiles')
+    .select('id, role, status')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileErr) throw httpError(500, profileErr.message, 'db_error');
+  if (!profile) throw httpError(404, 'Tài khoản không tồn tại', 'not_found');
+  if (profile.role !== 'provider') throw httpError(403, 'Chỉ tài xế mới có thể thực hiện thao tác này', 'forbidden');
+  if (profile.status === 'inactive') throw httpError(400, 'Tài khoản đã bị vô hiệu hóa', 'already_inactive');
+
+  // Chặn nếu đang có đơn hàng active
+  const { count: activeOrderCount, error: orderErr } = await supabaseAdmin
+    .from('orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('provider_id', userId)
+    .in('status', ['accepted', 'picking_up', 'in_progress', 'pending']);
+
+  if (orderErr) throw httpError(500, orderErr.message, 'db_error');
+  if (activeOrderCount && activeOrderCount > 0) {
+    throw httpError(400, `Bạn còn ${activeOrderCount} đơn hàng đang xử lý. Vui lòng hoàn tất hoặc hủy trước khi xóa tài khoản.`, 'has_active_orders');
+  }
+
+  // Soft delete: đặt inactive, offline
+  const { error: updateErr } = await supabaseAdmin
+    .from('profiles')
+    .update({ status: 'inactive' })
+    .eq('id', userId);
+
+  if (updateErr) throw httpError(500, updateErr.message, 'db_error');
+
+  await supabaseAdmin
+    .from('provider_profiles')
+    .update({ is_available: false, is_verified: false })
+    .eq('id', userId);
+
+  // Xóa session tokens (bỏ qua lỗi nếu bảng không tồn tại)
+  try {
+    await supabaseAdmin.from('auth_sessions').delete().eq('user_id', userId);
+  } catch (_) {
+    // Không block nếu bảng không tồn tại
+  }
+
+  return { message: 'Tài khoản đã được vô hiệu hóa thành công.' };
+}
+
 module.exports = {
   register,
   login,
@@ -613,4 +761,7 @@ module.exports = {
   resetPassword,
   googleAuth,
   logout,
+  sendPhoneOtp,
+  verifyPhoneOtp,
+  deactivateAccount,
 };

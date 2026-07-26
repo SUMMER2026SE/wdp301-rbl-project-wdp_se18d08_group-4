@@ -23,9 +23,12 @@ router.post('/logout', requireAuth, authController.logout);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
 router.post('/google', authController.googleAuth);
+router.post('/send-phone-otp', requireNodeAuth, authController.sendPhoneOtp);
+router.post('/verify-phone-otp', requireNodeAuth, authController.verifyPhoneOtp);
 
 router.get('/me', requireNodeAuth, authController.me);
 router.patch('/me', requireNodeAuth, authController.updateProfile);
 router.post('/change-password', requireNodeAuth, authController.changePassword);
+router.delete('/me', requireNodeAuth, authController.deactivateAccount);
 
 module.exports = router;

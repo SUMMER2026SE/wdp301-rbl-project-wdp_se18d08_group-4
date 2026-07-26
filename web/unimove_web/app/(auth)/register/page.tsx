@@ -216,12 +216,24 @@ export default function RegisterPage() {
             </InputRow>
           </Field>
 
-          <Field label="Số điện thoại" required={role === "customer"}>
-            <InputRow icon={<Phone size={16} />} accentColor={accentColor}>
-              <input type="tel" placeholder="0901234567" value={form.phone}
-                onChange={(e) => set("phone", e.target.value)} />
-            </InputRow>
-          </Field>
+          {/* SĐT chỉ thu thập ở bước đăng ký customer, provider sẽ xác minh SĐT qua OTP ở bước onboarding tiếp theo */}
+          {role === "customer" && (
+            <Field label="Số điện thoại" required>
+              <InputRow icon={<Phone size={16} />} accentColor={accentColor}>
+                <input type="tel" placeholder="0901234567" value={form.phone}
+                  onChange={(e) => set("phone", e.target.value)} />
+              </InputRow>
+            </Field>
+          )}
+
+          {isProvider && (
+            <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-[#FFFBEB] border border-[#FCD34D]">
+              <Phone size={15} className="shrink-0 mt-0.5 text-[#E6A800]" />
+              <p className="text-xs text-[#92400E] leading-relaxed">
+                Số điện thoại sẽ được xác minh bằng mã OTP ở bước tiếp theo sau khi đăng ký.
+              </p>
+            </div>
+          )}
 
           <Field label="Mật khẩu" required>
             <InputRow icon={<Lock size={16} />} accentColor={accentColor} trailing={

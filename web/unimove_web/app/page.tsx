@@ -29,6 +29,7 @@ const VIDEO_URL = "/hero.mp4";
 const NAV_LINKS = [
   { label: "Tính năng", href: "#tinh-nang" },
   { label: "Dịch vụ",   href: "#dich-vu"   },
+  { label: "Nhà xe",    href: "/nha-xe"    },
   { label: "Đối tác",   href: "#doi-tac"   },
   { label: "Liên hệ",   href: "#lien-he"   },
 ];
@@ -158,17 +159,17 @@ export default function LandingPage() {
         className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur-md"
         style={{ borderColor: "#FFF0A0" }}
       >
-        <div className="mx-auto grid h-20 max-w-7xl grid-cols-3 items-center px-6 lg:px-8">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-6 lg:px-8">
           {/* Logo — left */}
-          <Link href="/" className="shrink-0 justify-self-start">
+          <Link href="/" className="shrink-0">
             <UniMoveLogo size="lg" />
           </Link>
 
-          {/* Desktop nav — truly centered */}
-          <nav className="hidden items-center justify-center gap-9 md:flex">
+          {/* Desktop nav — center */}
+          <nav className="hidden items-center gap-6 md:flex">
             {NAV_LINKS.map(({ label, href }) => (
               <a key={href} href={href}
-                className="text-base font-semibold transition-colors"
+                className="text-sm font-semibold whitespace-nowrap transition-colors"
                 style={{ color: G }}
                 onMouseEnter={e => (e.currentTarget.style.color = B)}
                 onMouseLeave={e => (e.currentTarget.style.color = G)}>
@@ -178,7 +179,7 @@ export default function LandingPage() {
           </nav>
 
           {/* Desktop actions — right */}
-          <div className="hidden items-center justify-end gap-3 md:flex">
+          <div className="hidden shrink-0 items-center gap-3 md:flex">
             <Link href="/dang-nhap"
               className="rounded-full border px-5 py-2.5 text-sm font-semibold transition-all hover:scale-[1.02]"
               style={{ borderColor: B, color: B }}>
@@ -191,8 +192,8 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {/* Mobile hamburger — col 2 & 3 right-aligned */}
-          <div className="col-start-3 flex justify-end md:hidden">
+          {/* Mobile hamburger */}
+          <div className="ml-auto flex md:hidden">
             <button onClick={() => setMenuOpen(o => !o)}
               className="flex h-9 w-9 items-center justify-center rounded-xl"
               style={{ backgroundColor: YL }}>
@@ -469,11 +470,16 @@ export default function LandingPage() {
                   </li>
                 ))}
               </motion.ul>
-              <motion.div variants={fadeInUp}>
+              <motion.div variants={fadeInUp} className="flex flex-wrap items-center gap-4">
                 <Link href="/dang-ky"
                   className="group mt-10 flex w-fit items-center gap-2 rounded-full px-8 py-4 text-base font-bold transition-all hover:scale-[1.03] hover:brightness-95 active:scale-[0.98]"
                   style={{ backgroundColor: Y, color: D }}>
                   Đăng ký làm đối tác
+                  <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                </Link>
+                <Link href="/nha-xe"
+                  className="group mt-10 flex w-fit items-center gap-2 rounded-full px-8 py-4 text-base font-semibold border border-white/30 text-white transition-all hover:bg-white/10 hover:scale-[1.03] active:scale-[0.98]">
+                  Xem danh sách nhà xe
                   <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
                 </Link>
               </motion.div>

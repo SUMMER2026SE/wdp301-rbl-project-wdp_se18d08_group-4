@@ -4,37 +4,45 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Clock, CheckCircle, AlertTriangle, RefreshCw, FileText,
-  Truck, Star, ArrowRight, ArrowLeft,
+  Truck, Star, ArrowRight, ArrowLeft, XCircle, Upload,
 } from "lucide-react";
 import { authApi } from "@/lib/api";
 import { getStoredUser, isAuthenticated, storeAuth, type AuthUser } from "@/lib/auth";
 
-const BRAND   = "#1A56DB";  // provider primary CTA
-const SUCCESS = "#16A34A";  // semantic: xác minh, hoàn thành
+const BRAND   = "#1A56DB";
+const SUCCESS = "#16A34A";
+const DANGER  = "#DC2626";
 
-type PageState = "pending" | "approved";
+type PageState = "pending" | "approved" | "rejected";
 
 export default function ChoDuyetPage() {
   const router   = useRouter();
-  const [user,     setUser]     = useState<AuthUser | null>(null);
-  const [state,    setState]    = useState<PageState>("pending");
-  const [checking, setChecking] = useState(false);
-  const [message,  setMessage]  = useState<string | null>(null);
+  const [user,       setUser]       = useState<AuthUser | null>(null);
+  const [state,      setState]      = useState<PageState>("pending");
+  const [checking,   setChecking]   = useState(false);
+  const [message,    setMessage]    = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated()) { router.replace("/login"); return; }
     const u = getStoredUser();
     setUser(u);
     if (u?.is_verified) { setState("approved"); return; }
+    if ((u as AuthUser & { verification_status?: string })?.verification_status === "rejected") {
+      setState("rejected");
+    }
 
-    // localStorage có thể stale — tự động check server khi mount
     authApi.getMe().then(r => {
       if (r.success && r.data) {
-        const fresh = r.data as AuthUser;
+        const fresh = r.data as AuthUser & { verification_status?: string; verification_notes?: string };
         const token = localStorage.getItem("unimove_token") ?? "";
         storeAuth({ ...u!, ...fresh }, token);
         setUser(fresh);
-        if (fresh.is_verified) setState("approved");
+        if (fresh.is_verified) { setState("approved"); return; }
+        if (fresh.verification_status === "rejected") {
+          setState("rejected");
+          setRejectNote(fresh.verification_notes ?? null);
+        }
       }
     }).catch(() => {});
   }, [router]);
@@ -45,11 +53,16 @@ export default function ChoDuyetPage() {
     try {
       const res = await authApi.getMe();
       if (res.success && res.data) {
-        const fresh = res.data as AuthUser;
+        const fresh = res.data as AuthUser & { verification_status?: string; verification_notes?: string };
         const token = localStorage.getItem("unimove_token") ?? "";
         storeAuth({ ...user!, ...fresh }, token);
         setUser(fresh);
         if (fresh.is_verified) { setState("approved"); return; }
+        if (fresh.verification_status === "rejected") {
+          setState("rejected");
+          setRejectNote(fresh.verification_notes ?? null);
+          return;
+        }
       }
       setMessage("Tài khoản chưa được phê duyệt. Vui lòng thử lại sau ít giờ.");
     } catch {
@@ -121,6 +134,73 @@ export default function ChoDuyetPage() {
                 className="w-full rounded-full font-bold text-white flex items-center justify-center gap-2 transition-all hover:brightness-110 active:scale-[0.98] shadow-lg"
                 style={{ height: 52, backgroundColor: BRAND, boxShadow: "0 8px 24px rgba(26,86,219,0.35)" }}>
                 Vào Dashboard <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── REJECTED ── */
+  if (state === "rejected") {
+    return (
+      <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#F8FAFC" }}>
+        <Header />
+        <div className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            {/* Red header */}
+            <div className="px-8 pt-10 pb-8 text-center"
+              style={{ background: "linear-gradient(135deg, #B91C1C, #DC2626)" }}>
+              <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-white/20">
+                <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center">
+                  <XCircle size={32} style={{ color: DANGER }} />
+                </div>
+              </div>
+              <h1 className="text-2xl font-extrabold text-white mb-1">Hồ sơ bị từ chối</h1>
+              <p className="text-red-100 text-sm">Vui lòng cập nhật lại giấy tờ theo yêu cầu</p>
+            </div>
+
+            <div className="px-8 py-7 space-y-5">
+              {/* Lý do từ chối */}
+              {rejectNote && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <p className="text-xs font-bold text-red-500 uppercase tracking-wide mb-1.5">Lý do từ chối</p>
+                  <p className="text-sm text-red-700 leading-relaxed">{rejectNote}</p>
+                </div>
+              )}
+
+              {/* Hướng dẫn */}
+              <div className="rounded-2xl border border-orange-100 bg-orange-50 p-4 space-y-2">
+                <p className="text-xs font-bold text-orange-600 uppercase tracking-wide">Cần làm gì?</p>
+                {[
+                  "Chụp lại giấy tờ rõ nét, đủ ánh sáng",
+                  "Đảm bảo không bị che khuất hoặc mờ",
+                  "Upload lại và chờ admin xét duyệt lần hai",
+                ].map((tip, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="w-5 h-5 rounded-full bg-orange-200 text-orange-700 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                    <p className="text-sm text-orange-700">{tip}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <button
+                onClick={() => router.push("/dang-ky-tai-xe")}
+                className="w-full h-12 rounded-full font-bold text-white flex items-center justify-center gap-2 transition-all hover:brightness-110"
+                style={{ backgroundColor: BRAND }}
+              >
+                <Upload size={16} /> Upload lại giấy tờ
+              </button>
+              <button
+                onClick={checkStatus}
+                disabled={checking}
+                className="w-full h-11 rounded-full font-semibold text-gray-600 flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-60"
+              >
+                {checking
+                  ? <span className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
+                  : <><RefreshCw size={14} /> Kiểm tra lại trạng thái</>}
               </button>
             </div>
           </div>

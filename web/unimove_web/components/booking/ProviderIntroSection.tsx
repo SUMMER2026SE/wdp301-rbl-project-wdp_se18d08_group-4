@@ -9,6 +9,7 @@ import {
   type ProviderReviewItem,
   type ReviewsSummary,
 } from "./ProviderReviewsSection";
+import { AiReviewSummary } from "./AiReviewSummary";
 
 const NAVY = "#0F1E3D";
 
@@ -233,6 +234,9 @@ export function ProviderReviewsBlock({
         summary={provider.reviews_summary}
       />
       <div className="mt-6 pt-4 border-t border-gray-100">
+        {/* AI-generated summary — only renders when Gemini returns something */}
+        <AiReviewSummary reviews={reviews} minReviews={1} />
+
         {reviews.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-6">Chưa có đánh giá</p>
         ) : (

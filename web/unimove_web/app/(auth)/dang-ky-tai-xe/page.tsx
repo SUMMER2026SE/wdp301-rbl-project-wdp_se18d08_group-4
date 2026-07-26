@@ -62,7 +62,17 @@ export default function DangKyTaiXePage() {
   const [ward,   setWard]   = useState("");
   const [street, setStreet] = useState("");
 
+  // OTP phone verification
+  const [otpSent,     setOtpSent]     = useState(false);
+  const [otpValue,    setOtpValue]    = useState("");
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpLoading,  setOtpLoading]  = useState(false);
+  const [otpError,    setOtpError]    = useState<string | null>(null);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [vehicleType,    setVehicleType]    = useState("");
+  const [vehiclePlate,   setVehiclePlate]   = useState("");
   const [vehicleFile,    setVehicleFile]    = useState<File | null>(null);
   const [vehiclePreview, setVehiclePreview] = useState<string | null>(null);
   const vehicleRef = useRef<HTMLInputElement>(null);
@@ -104,9 +114,52 @@ export default function DangKyTaiXePage() {
     setPreviews(p => ({ ...p, [key]: URL.createObjectURL(f) }));
   };
 
+  const sendOtp = async () => {
+    if (!phone.trim()) { setOtpError("Nhập số điện thoại trước"); return; }
+    if (!user?.id) { setOtpError("Chưa đăng nhập"); return; }
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      await authApi.sendPhoneOtp(phone.trim(), user.id);
+      setOtpSent(true);
+      setOtpCooldown(60);
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
+      cooldownRef.current = setInterval(() => {
+        setOtpCooldown(prev => {
+          if (prev <= 1) {
+            if (cooldownRef.current) clearInterval(cooldownRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (e) {
+      setOtpError(e instanceof Error ? e.message : "Gửi mã thất bại");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!otpValue.trim()) { setOtpError("Nhập mã OTP"); return; }
+    if (!user?.id) { setOtpError("Chưa đăng nhập"); return; }
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      await authApi.verifyPhoneOtp(otpValue.trim(), user.id);
+      setOtpVerified(true);
+      setOtpError(null);
+    } catch (e) {
+      setOtpError(e instanceof Error ? e.message : "Mã OTP không hợp lệ");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   const nextStep1 = async () => {
     setError(null);
     if (!phone.trim())  { setError("Vui lòng nhập số điện thoại"); return; }
+    if (!otpVerified)   { setError("Vui lòng xác minh số điện thoại bằng mã OTP"); return; }
     if (!ward)          { setError("Vui lòng chọn phường"); return; }
     if (!street.trim()) { setError("Vui lòng nhập số nhà và tên đường"); return; }
     setLoading(true);
@@ -123,10 +176,11 @@ export default function DangKyTaiXePage() {
 
   const nextStep2 = async () => {
     setError(null);
-    if (!vehicleType) { setError("Vui lòng chọn loại phương tiện"); return; }
+    if (!vehicleType)         { setError("Vui lòng chọn loại phương tiện"); return; }
+    if (!vehiclePlate.trim()) { setError("Vui lòng nhập biển số xe"); return; }
     setLoading(true);
     try {
-      const res = await authApi.updateMe({ vehicle_type: vehicleType });
+      const res = await authApi.updateMe({ vehicle_type: vehicleType, vehicle_plate: vehiclePlate.trim() });
       if (res.success && res.data) {
         const token = localStorage.getItem("unimove_token") ?? "";
         storeAuth({ ...user!, ...(res.data as AuthUser) }, token);
@@ -224,9 +278,75 @@ export default function DangKyTaiXePage() {
                   className="w-full h-12 px-4 rounded-xl border border-gray-200 text-sm bg-gray-100 text-gray-500" />
               </Field>
               <Field label="Số điện thoại" required>
-                <FieldInput icon={<Phone size={15} />} placeholder="0901 234 567" type="tel"
-                  value={phone} onChange={e => setPhone(e.target.value)} />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <FieldInput icon={<Phone size={15} />} placeholder="0901 234 567" type="tel"
+                      value={phone} onChange={e => { setPhone(e.target.value); setOtpVerified(false); setOtpSent(false); setOtpValue(""); setOtpError(null); }}
+                      disabled={otpVerified} />
+                  </div>
+                  {!otpVerified && (
+                    <button
+                      type="button"
+                      onClick={sendOtp}
+                      disabled={otpLoading || otpCooldown > 0 || !phone.trim()}
+                      className="shrink-0 h-12 px-4 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
+                      style={{ backgroundColor: BRAND, minWidth: 90 }}
+                    >
+                      {otpLoading ? (
+                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin inline-block" />
+                      ) : otpCooldown > 0 ? `${otpCooldown}s` : otpSent ? "Gửi lại" : "Gửi mã"}
+                    </button>
+                  )}
+                  {otpVerified && (
+                    <div className="h-12 px-3 rounded-xl flex items-center gap-1.5 text-sm font-semibold"
+                      style={{ backgroundColor: "#dcfce7", color: "#16A34A" }}>
+                      <CheckCircle size={15} /> Đã xác minh
+                    </div>
+                  )}
+                </div>
               </Field>
+
+              {/* OTP input — hiện sau khi nhấn Gửi mã */}
+              {otpSent && !otpVerified && (
+                <Field label={`Nhập mã OTP gửi đến ${user?.email ?? "email của bạn"}`} required>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="● ● ● ● ● ●"
+                        value={otpValue}
+                        onChange={e => { setOtpValue(e.target.value.replace(/\D/g, "")); setOtpError(null); }}
+                        className="flex-1 h-12 px-4 rounded-xl border text-center text-xl font-bold tracking-[0.4em] focus:outline-none focus:ring-2 transition-colors"
+                        style={{
+                          borderColor: otpError ? "#EF4444" : BRAND,
+                          "--tw-ring-color": BRAND,
+                        } as React.CSSProperties}
+                      />
+                      <button
+                        type="button"
+                        onClick={verifyOtp}
+                        disabled={otpLoading || otpValue.length < 6}
+                        className="h-12 px-5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
+                        style={{ backgroundColor: BRAND }}
+                      >
+                        {otpLoading
+                          ? <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin inline-block" />
+                          : "Xác nhận"}
+                      </button>
+                    </div>
+                    {otpError && (
+                      <p className="text-xs text-red-500 flex items-center gap-1">
+                        <AlertCircle size={12} /> {otpError}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400">
+                      Kiểm tra hộp thư <strong>{user?.email}</strong> · Mã có hiệu lực 10 phút
+                    </p>
+                  </div>
+                </Field>
+              )}
               <Field label="Thành phố">
                 <div className="flex items-center gap-2 h-12 px-4 rounded-xl border border-gray-200 bg-gray-100">
                   <MapPin size={15} className="text-gray-400 shrink-0" />
@@ -274,6 +394,15 @@ export default function DangKyTaiXePage() {
                   </select>
                   <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
                 </div>
+              </Field>
+              <Field label="Biển số xe" required hint="VD: 43A-123.45">
+                <FieldInput
+                  icon={<Truck size={15} />}
+                  placeholder="43A-123.45"
+                  value={vehiclePlate}
+                  onChange={e => setVehiclePlate(e.target.value.toUpperCase())}
+                  maxLength={12}
+                />
               </Field>
               <Field label="Ảnh phương tiện" hint="Tuỳ chọn — JPG / PNG, tối đa 5MB">
                 {vehiclePreview ? (

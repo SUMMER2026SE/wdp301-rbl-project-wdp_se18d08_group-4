@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_images.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/uni_move_colors.dart';
 import '../../../../core/widgets/dark_glass_background.dart';
 import '../../../../core/widgets/shad_screen_scope.dart';
 import '../../../../core/widgets/unimove_logo.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/auth/google_sign_in_service.dart';
+import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/data/customer_auth_repository.dart';
 
@@ -335,7 +336,9 @@ class _LoginPageState extends State<LoginPage> {
                                           Expanded(
                                             child: ShadButton.outline(
                                               enabled: !_googleLoading,
-                                              onPressed: _googleLoading ? null : _signInWithGoogle,
+                                              onPressed: _googleLoading
+                                                  ? null
+                                                  : () => _handleGooglePressed(shadContext),
                                               child: Row(
                                                 mainAxisAlignment: MainAxisAlignment.center,
                                                 children: [
@@ -346,12 +349,10 @@ class _LoginPageState extends State<LoginPage> {
                                                       child: CircularProgressIndicator(strokeWidth: 2),
                                                     )
                                                   else
-                                                    Image.network(
-                                                      AppImages.googleIcon,
+                                                    SvgPicture.asset(
+                                                      'assets/icons/google_logo.svg',
                                                       width: 18,
                                                       height: 18,
-                                                      errorBuilder: (_, __, ___) =>
-                                                          const Icon(LucideIcons.globe, size: 18),
                                                     ),
                                                   const SizedBox(width: 8),
                                                   Text(_googleLoading ? 'Đang mở...' : 'Google'),
@@ -428,6 +429,16 @@ class _LoginPageState extends State<LoginPage> {
         );
       },
     );
+  }
+
+  /// Kiểm tra cấu hình trước — nếu chưa cấu hình thì hiện toast "sắp có"
+  /// thay vì để lỗi kỹ thuật hiện lên màn hình.
+  void _handleGooglePressed(BuildContext shadContext) {
+    if (!ApiConfig.isGoogleConfigured) {
+      _socialSnack(shadContext, 'Google');
+      return;
+    }
+    _signInWithGoogle();
   }
 
   Future<void> _signInWithGoogle() async {

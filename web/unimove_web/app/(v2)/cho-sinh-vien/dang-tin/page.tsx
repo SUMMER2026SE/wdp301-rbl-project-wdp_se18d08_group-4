@@ -35,7 +35,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Separator } from "@/components/ui/separator";
 import { marketplaceApi } from "@/lib/api";
 import { useUIStore } from "@/lib/stores";
-import { formatVND, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ListingFeeQuotaCard } from "@/components/marketplace/ListingFeeQuotaCard";
 
 const CATEGORIES = [
@@ -243,23 +243,7 @@ export default function DangTinPage() {
         return;
       }
       const data = res.data as { id?: string };
-      const fee = (res as { listing_fee?: { requires_payment?: boolean; amount?: number } })
-        .listing_fee;
       localStorage.removeItem(DRAFT_KEY);
-      if (fee?.requires_payment && data?.id) {
-        try {
-          const pay = await marketplaceApi.payListingFee(data.id, { payment_method: "payos" });
-          const checkout = (pay.data as { checkout_url?: string })?.checkout_url;
-          if (checkout) {
-            window.location.href = checkout;
-            return;
-          }
-        } catch {
-          showError(
-            `Tin đã tạo. Phí đăng tin ${formatVND(fee.amount ?? 0)} — thanh toán sau trong Tin của tôi.`
-          );
-        }
-      }
       showSuccess("Đăng tin thành công!");
       router.push(data?.id ? `/cho-sinh-vien/${data.id}` : "/cho-sinh-vien/tin-cua-toi");
     } catch (err) {

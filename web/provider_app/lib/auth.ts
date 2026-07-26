@@ -14,6 +14,8 @@ export interface ProviderUser {
   rating?: number;
   is_verified?: boolean;
   status?: string;
+  verification_status?: "pending" | "approved" | "rejected";
+  verification_notes?: string;
 }
 
 export function getStoredUser(): ProviderUser | null {

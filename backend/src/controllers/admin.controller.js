@@ -368,10 +368,24 @@ async function verifyProvider(req, res) {
       .maybeSingle();
 
     // Khi approve: đánh dấu tất cả giấy tờ của provider là đã xác minh
+    // và cập nhật profiles.status → active
     if (is_verified) {
       await supabaseAdmin
         .from('provider_documents')
         .update({ is_verified: true, verified_by: req.user.id })
+        .eq('provider_id', id);
+
+      await supabaseAdmin
+        .from('profiles')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', id);
+    }
+
+    // Khi reject: xóa toàn bộ giấy tờ để provider phải upload lại từ đầu
+    if (!is_verified) {
+      await supabaseAdmin
+        .from('provider_documents')
+        .delete()
         .eq('provider_id', id);
     }
 

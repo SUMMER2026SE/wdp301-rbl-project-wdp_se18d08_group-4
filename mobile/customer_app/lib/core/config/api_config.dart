@@ -2,15 +2,21 @@ import 'package:flutter/foundation.dart';
 
 /// URL Node API.
 ///
-/// **Điện thoại thật (Vysor/USB):** [useLanHost] = true + [lanHost] = IP Wi‑Fi PC (`ipconfig`).
-/// Hoặc chạy: `adb reverse tcp:3000 tcp:3000` rồi đặt [useAdbReverse] = true.
+/// **Điện thoại thật (Wi-Fi cùng mạng với PC):**
+///   1. Chạy `ipconfig` (Windows) / `ifconfig` (Mac/Linux) trên PC → lấy IP Wi-Fi (vd: 192.168.x.x)
+///   2. Đặt [useLanHost] = true và điền IP đó vào [lanHost]
+/// Hoặc dùng Vysor/USB: [useLanHost] = true + [lanHost] = IP Wi‑Fi PC.
 ///
-/// **Android emulator:** [useLanHost] = false → `10.0.2.2`
+/// **USB + adb reverse (khuyến nghị cho dev):**
+///   Chạy: `adb reverse tcp:3000 tcp:3000` rồi đặt [useAdbReverse] = true
+///
+/// **Android emulator:** [useLanHost] = false, [useAdbReverse] = false → tự dùng `10.0.2.2`
 abstract final class ApiConfig {
   /// May that qua Wi-Fi cung mang voi PC.
   static const useLanHost = false;
 
   /// IP PC (Wi-Fi) — chi khi useLanHost = true.
+  /// Lay bang lenh: ipconfig (Windows) hoac ifconfig (Mac/Linux)
   static const lanHost = '192.168.29.1';
 
   /// USB + `adb reverse tcp:3000 tcp:3000` (cach 2 — dang dung).

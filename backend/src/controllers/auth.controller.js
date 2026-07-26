@@ -85,6 +85,33 @@ async function logout(req, res, next) {
   }
 }
 
+async function sendPhoneOtp(req, res, next) {
+  try {
+    const data = await authService.sendPhoneOtp(req.body || {});
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function verifyPhoneOtp(req, res, next) {
+  try {
+    const data = await authService.verifyPhoneOtp(req.body || {});
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function deactivateAccount(req, res, next) {
+  try {
+    const data = await authService.deactivateAccount(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -95,4 +122,7 @@ module.exports = {
   resetPassword,
   googleAuth,
   logout,
+  sendPhoneOtp,
+  verifyPhoneOtp,
+  deactivateAccount,
 };

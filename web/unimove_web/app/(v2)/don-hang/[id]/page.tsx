@@ -418,6 +418,20 @@ export default function DonHangDetailPage() {
 
   useEffect(() => { load().finally(() => setLoading(false)); }, [id]);
 
+  // Tự động reload mỗi 15 giây khi đơn đang trong trạng thái chờ thay đổi từ provider
+  // Dừng khi đã hoàn thành hoặc hủy
+  useEffect(() => {
+    const TERMINAL = new Set(["completed", "cancelled"]);
+    if (order && TERMINAL.has(order.status)) return; // không cần poll nữa
+
+    const interval = setInterval(() => {
+      load().catch(() => {/* silent */});
+    }, 15_000);
+
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, order?.status]);
+
   const openCancelFlow = async () => {
     setCancelStep(1);
     setLoadingEstimate(true);

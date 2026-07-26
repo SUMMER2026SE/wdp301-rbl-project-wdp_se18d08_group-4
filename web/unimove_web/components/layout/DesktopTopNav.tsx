@@ -11,11 +11,12 @@ import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { useBookingFlowStore } from '@/lib/stores/useBookingFlowStore'
 
 const NAV_LINKS = [
-  { href: '/trang-chu', label: 'Trang chủ' },
-  { href: '/dat-chuyen', label: 'Dịch vụ' },
+  { href: '/trang-chu',       label: 'Trang chủ' },
+  { href: '/dat-chuyen',      label: 'Dịch vụ'   },
   { href: '/reference-prices', label: 'Bảng giá' },
-  { href: '/cho-sinh-vien', label: 'Chợ SV' },
-  { href: '/hoat-dong', label: 'Hoạt động' },
+  { href: '/nha-xe',          label: 'Nhà xe'    },
+  { href: '/cho-sinh-vien',   label: 'Chợ SV'    },
+  { href: '/hoat-dong',       label: 'Hoạt động' },
 ] as const
 
 export function DesktopTopNav() {

@@ -509,6 +509,78 @@ async function getQuotedOrders(providerId) {
   return { orders: result };
 }
 
+// ── POST /api/providers/me/request-verification ──────────────────────────────
+// Tài xế yêu cầu admin xét duyệt lại sau khi đã upload đủ giấy tờ mới
+async function requestVerification(providerId) {
+  // Kiểm tra provider tồn tại và đang ở trạng thái rejected hoặc chưa verified
+  const { data: pp, error: ppErr } = await supabaseAdmin
+    .from('provider_profiles')
+    .select('id, verification_status, is_verified')
+    .eq('id', providerId)
+    .maybeSingle();
+
+  if (ppErr) throw httpError(500, ppErr.message, 'db_error');
+  if (!pp) throw httpError(404, 'Không tìm thấy hồ sơ tài xế', 'not_found');
+
+  if (pp.is_verified) {
+    throw httpError(400, 'Tài khoản đã được xác minh, không cần yêu cầu lại', 'already_verified');
+  }
+
+  // Kiểm tra đã có ít nhất 1 giấy tờ chưa
+  const { count, error: docErr } = await supabaseAdmin
+    .from('provider_documents')
+    .select('id', { count: 'exact', head: true })
+    .eq('provider_id', providerId);
+
+  if (docErr) throw httpError(500, docErr.message, 'db_error');
+  if (!count || count === 0) {
+    throw httpError(400, 'Vui lòng upload giấy tờ trước khi yêu cầu xác minh', 'no_documents');
+  }
+
+  // Chuyển về pending để admin duyệt lại
+  const { error: updateErr } = await supabaseAdmin
+    .from('provider_profiles')
+    .update({
+      verification_status: 'pending',
+      verification_notes: null,
+      verified_at: null,
+      verified_by: null,
+    })
+    .eq('id', providerId);
+
+  if (updateErr) throw httpError(500, updateErr.message, 'db_error');
+
+  await supabaseAdmin
+    .from('profiles')
+    .update({ status: 'pending_verification' })
+    .eq('id', providerId);
+
+  // Gửi notification cho admin (không block nếu lỗi)
+  try {
+    const { data: admins } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin')
+      .limit(10);
+
+    if (admins && admins.length > 0) {
+      await supabaseAdmin.from('notifications').insert(
+        admins.map((admin) => ({
+          user_id: admin.id,
+          notification_type: 'provider_verified',
+          title: 'Tài xế yêu cầu xác minh lại',
+          body: 'Một tài xế đã nộp lại giấy tờ và yêu cầu xét duyệt.',
+          priority: 'high',
+        })),
+      );
+    }
+  } catch (_) {
+    // Không block response nếu gửi notification lỗi
+  }
+
+  return { verification_status: 'pending', message: 'Yêu cầu xác minh đã được gửi đến admin.' };
+}
+
 module.exports = {
   browseProviders,
   getProviderById,
@@ -518,4 +590,5 @@ module.exports = {
   uploadProviderDocuments,
   getMyDocuments,
   getQuotedOrders,
+  requestVerification,
 };
