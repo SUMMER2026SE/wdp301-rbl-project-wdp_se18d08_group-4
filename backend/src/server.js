@@ -17,9 +17,8 @@ function lanAddresses() {
   return ips;
 }
 
-startOrderTimeoutJob();
-
-app.listen(env.PORT, '0.0.0.0', () => {
+const server = app.listen(env.PORT, '0.0.0.0', () => {
+  startOrderTimeoutJob();
   const payosOk = Boolean(env.PAYOS_CLIENT_ID && env.PAYOS_API_KEY && env.PAYOS_CHECKSUM_KEY);
   const goongOk = Boolean(env.GOONG_API_KEY);
   console.log(`UniMove API: http://localhost:${env.PORT}`);
@@ -33,4 +32,13 @@ app.listen(env.PORT, '0.0.0.0', () => {
     ips.forEach((ip) => console.log(`  http://${ip}:${env.PORT}/api`));
   }
   console.log('Android emulator → http://10.0.2.2:' + env.PORT + '/api');
+});
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Port ${env.PORT} đang được sử dụng.`);
+    console.error(`Tắt process đang chạy trên port ${env.PORT}, hoặc đổi PORT trong .env và NEXT_PUBLIC_API_URL cho khớp.`);
+    process.exit(1);
+  }
+  throw error;
 });

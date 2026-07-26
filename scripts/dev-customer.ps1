@@ -17,6 +17,13 @@ function Get-LanIp {
     return $null
 }
 
+function Test-PortOpen {
+    param([int]$Port)
+    $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    return $null -ne $conn
+}
+
+$backendPort = 3000
 $lanIp = Get-LanIp
 if ($lanIp) {
     Write-Host "==> PC LAN IP: $lanIp (api_config.dart lanHost)" -ForegroundColor Yellow
@@ -31,6 +38,11 @@ try {
 } catch { }
 
 if (-not $beUp) {
+    if (Test-PortOpen -Port $backendPort) {
+        Write-Host "==> Port $backendPort đang được sử dụng nhưng backend chưa trả health." -ForegroundColor Yellow
+        Write-Host "    Kiểm tra process khác đang chạy trên port $backendPort, hoặc đổi PORT trong .env và NEXT_PUBLIC_API_URL cho khớp." -ForegroundColor Yellow
+        exit 1
+    }
     Write-Host "==> Starting backend (new window)..." -ForegroundColor Cyan
     $beCmd = "Set-Location '$backendDir'; Write-Host 'UniMove API - Ctrl+C here stops backend only' -ForegroundColor Green; npm run dev"
     Start-Process powershell -ArgumentList @("-NoExit", "-Command", $beCmd)

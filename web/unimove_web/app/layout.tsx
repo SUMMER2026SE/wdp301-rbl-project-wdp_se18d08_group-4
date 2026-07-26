@@ -5,6 +5,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { ThemeInit } from "@/components/shared/theme-init";
 import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
+import { ChatWidget } from "@/components/chatbot/chat-widget";
 import "./globals.css";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </Suspense>
         <ThemeInit />
         <ToastProvider>{children}</ToastProvider>
+        <ChatWidget />
       </body>
     </html>
   );
